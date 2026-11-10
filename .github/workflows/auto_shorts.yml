@@ -1,0 +1,30 @@
+name: Auto AI Story Shorts
+
+on:
+  schedule:
+    - cron: '0 12,18 * * *' # يعمل تلقائياً الساعة 12 ظهراً و6 مساءً بتوقيت UTC
+  workflow_dispatch: # يتيح لك تشغيله يدوياً بضغطة زر في أي وقت
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install FFmpeg & Dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          pip install requests edge-tts google-api-python-client google-auth-oauthlib
+
+      - name: Generate and Publish Video
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python main.py
