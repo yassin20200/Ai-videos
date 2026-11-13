@@ -21,7 +21,6 @@ GRAPH_API = "https://graph.facebook.com/v21.0"
 
 
 def generate_story():
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     prompt = """
     اكتب قصة قصيرة مشوقة وغامضة جداً تصلح لفيديو شورتس وريلز (مدتها حوالي 35-40 ثانية).
     أخرج النتيجة بصيغة JSON فقط بهذا الهيكل:
@@ -40,10 +39,14 @@ def generate_story():
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"responseMimeType": "application/json"}
     }
-    res = requests.post(url, json=payload, timeout=60).json()
-    text = res["candidates"][0]["content"]["parts"][0]["text"]
-    return json.loads(text)
-
+    for model in ["gemini-4.0-argon", "gemini-2.5-pro", "gemini-2.5-flash"]:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+        res = requests.post(url, json=payload, timeout=60).json()
+        if "candidates" in res:
+            print(f"تم توليد القصة باستخدام: {model}")
+            text = res["candidates"][0]["content"]["parts"][0]["text"]
+            return json.loads(text)
+    raise RuntimeError(f"فشل الاتصال بـ Gemini API: {res}")
 
 def create_scene_assets(index, narration, image_prompt):
     audio_file = f"scene_{index}.mp3"
