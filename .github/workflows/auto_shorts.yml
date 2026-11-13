@@ -2,8 +2,8 @@ name: Auto AI Story Shorts
 
 on:
   schedule:
-    - cron: '0 12,18 * * *' # يعمل تلقائياً الساعة 12 ظهراً و6 مساءً بتوقيت UTC
-  workflow_dispatch: # يتيح لك تشغيله يدوياً بضغطة زر في أي وقت
+    - cron: '0 12,18 * * *'
+  workflow_dispatch:
 
 jobs:
   build-and-publish:
@@ -25,6 +25,10 @@ jobs:
       - name: Generate and Publish Video
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKENS: ${{ secrets.YT_REFRESH_TOKENS }}
+          FB_PAGE_IDS: ${{ secrets.FB_PAGE_IDS }}
+          IG_USER_IDS: ${{ secrets.IG_USER_IDS }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
         run: python main.py
