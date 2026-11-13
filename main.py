@@ -4,62 +4,67 @@ import time
 import urllib.parse
 import subprocess
 import requests
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+YT_CLIENT_ID = os.getenv("YT_CLIENT_ID")
+YT_CLIENT_SECRET = os.getenv("YT_CLIENT_SECRET")
+YT_REFRESH_TOKENS = [t.strip() for t in os.getenv("YT_REFRESH_TOKENS", "").split(",") if t.strip()]
+
+FB_PAGE_IDS = [p.strip() for p in os.getenv("FB_PAGE_IDS", "").split(",") if p.strip()]
+IG_USER_IDS = [i.strip() for i in os.getenv("IG_USER_IDS", "").split(",") if i.strip()]
+META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "").strip()
+
+GRAPH_API = "https://graph.facebook.com/v21.0"
+
 
 def generate_story():
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     prompt = """
-    اكتب قصة قصيرة مشوقة وغامضة تصلح لفيديو يوتيوب شورتس (مدتها 40 ثانية).
+    اكتب قصة قصيرة مشوقة وغامضة جداً تصلح لفيديو شورتس وريلز (مدتها حوالي 35-40 ثانية).
     أخرج النتيجة بصيغة JSON فقط بهذا الهيكل:
     {
-      "title": "عنوان جذاب للفيديو مع هاشتاجات",
+      "title": "عنوان مشوق جداً للفيديو",
       "scenes": [
         {
-          "narration": "النص العربي الذي سيقرأه المعلق في هذا المشهد بالتشكيل الصحيح",
-          "image_prompt": "Detailed cinematic vertical 9:16 illustration of the scene, dark dramatic lighting, 8k, masterpiece"
+          "narration": "النص العربي للمشهد بالتشكيل الصحيح والواضح",
+          "image_prompt": "Detailed cinematic vertical 9:16 illustration, dark mysterious atmosphere, 8k, masterpiece"
         }
       ]
     }
-    اجعل القصة مكونة من 5 مشاهد مترابطة.
+    اجعل القصة مقسمة إلى 5 مشاهد مترابطة ومتتالية.
     """
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"responseMimeType": "application/json"}
     }
-    res = requests.post(url, json=payload).json()
+    res = requests.post(url, json=payload, timeout=60).json()
     text = res["candidates"][0]["content"]["parts"][0]["text"]
     return json.loads(text)
 
+
 def create_scene_assets(index, narration, image_prompt):
-    # 1. توليد الصوت بـ Edge-TTS
     audio_file = f"scene_{index}.mp3"
     subprocess.run([
-        "edge-tts",
-        "--voice", "ar-EG-ShakirNeural",
-        "--rate", "+5%",
-        "--text", narration,
-        "--write-media", audio_file
+        "edge-tts", "--voice", "ar-EG-ShakirNeural", "--rate", "+5%",
+        "--text", narration, "--write-media", audio_file
     ], check=True)
 
-    # 2. حساب مدة الصوت بالثواني
     probe = subprocess.run([
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", audio_file
     ], capture_output=True, text=True, check=True)
     duration = float(probe.stdout.strip())
 
-    # 3. تحميل الصورة من Pollinations (Flux)
     encoded_prompt = urllib.parse.quote(image_prompt)
     img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&model=flux&nologo=true&seed={int(time.time()) + index}"
     img_file = f"scene_{index}.jpg"
-    img_data = requests.get(img_url, timeout=60).content
+    img_data = requests.get(img_url, timeout=90).content
     with open(img_file, "wb") as f:
         f.write(img_data)
 
-    # 4. عمل مونتاج للمشهد مع تأثير Zoom سينمائي
     video_file = f"scene_{index}.mp4"
     fps = 30
     total_frames = int(duration * fps) + 15
@@ -69,43 +74,155 @@ def create_scene_assets(index, narration, image_prompt):
         f"d={total_frames}:s=1080x1920:fps={fps}"
     )
     subprocess.run([
-        "ffmpeg", "-y",
-        "-loop", "1", "-i", img_file,
-        "-i", audio_file,
-        "-vf", zoom_filter,
-        "-c:v", "libx264", "-t", str(duration),
-        "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest",
-        video_file
+        "ffmpeg", "-y", "-loop", "1", "-i", img_file, "-i", audio_file,
+        "-vf", zoom_filter, "-c:v", "libx264", "-t", str(duration),
+        "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", video_file
     ], check=True)
     return video_file
 
-def assemble_and_publish():
-    story = generate_story()
-    scene_videos = []
 
+def upload_to_youtube(video_path, title, refresh_token):
+    creds = Credentials(
+        None,
+        refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=YT_CLIENT_ID,
+        client_secret=YT_CLIENT_SECRET
+    )
+    youtube = build("youtube", "v3", credentials=creds)
+    body = {
+        "snippet": {
+            "title": f"{title[:80]} #shorts",
+            "description": f"{title}\n\n#قصص #حكايات #غموض #shorts",
+            "tags": ["shorts", "قصص", "حكايات", "غموض"],
+            "categoryId": "24"
+        },
+        "status": {
+            "privacyStatus": "public",
+            "selfDeclaredMadeForKids": False
+        }
+    }
+    media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
+    res = youtube.videos().insert(part="snippet,status", body=body, media_body=media).execute()
+    print(f"[YouTube] تم الرفع بنجاح: https://youtu.be/{res['id']}")
+
+
+def upload_to_facebook_reels(video_path, title, page_id):
+    file_size = os.path.getsize(video_path)
+    init_res = requests.post(
+        f"{GRAPH_API}/{page_id}/video_reels",
+        data={"upload_phase": "start", "access_token": META_ACCESS_TOKEN},
+        timeout=30
+    ).json()
+
+    video_id = init_res["video_id"]
+    upload_url = init_res["upload_url"]
+
+    with open(video_path, "rb") as f:
+        headers = {
+            "Authorization": f"OAuth {META_ACCESS_TOKEN}",
+            "offset": "0",
+            "file_size": str(file_size)
+        }
+        requests.post(upload_url, headers=headers, data=f, timeout=180).raise_for_status()
+
+    finish_res = requests.post(
+        f"{GRAPH_API}/{page_id}/video_reels",
+        data={
+            "upload_phase": "finish",
+            "video_id": video_id,
+            "video_state": "PUBLISHED",
+            "description": f"{title}\n\n#قصص #حكايات #غموض #reels",
+            "access_token": META_ACCESS_TOKEN
+        },
+        timeout=60
+    ).json()
+    print(f"[Facebook Reels] تم النشر بنجاح: {finish_res}")
+
+
+def upload_to_instagram_reels(video_path, title, ig_user_id):
+    file_size = os.path.getsize(video_path)
+    init_res = requests.post(
+        f"{GRAPH_API}/{ig_user_id}/media",
+        data={
+            "media_type": "REELS",
+            "upload_type": "resumable",
+            "caption": f"{title}\n\n#قصص #حكايات #غموض #reels",
+            "access_token": META_ACCESS_TOKEN
+        },
+        timeout=30
+    ).json()
+
+    container_id = init_res["id"]
+    upload_uri = init_res["uri"]
+
+    with open(video_path, "rb") as f:
+        headers = {
+            "Authorization": f"OAuth {META_ACCESS_TOKEN}",
+            "offset": "0",
+            "file_size": str(file_size)
+        }
+        requests.post(upload_uri, headers=headers, data=f, timeout=180).raise_for_status()
+
+    for _ in range(20):
+        status_res = requests.get(
+            f"{GRAPH_API}/{container_id}",
+            params={"fields": "status_code", "access_token": META_ACCESS_TOKEN},
+            timeout=30
+        ).json()
+        if status_res.get("status_code") == "FINISHED":
+            break
+        time.sleep(5)
+
+    pub_res = requests.post(
+        f"{GRAPH_API}/{ig_user_id}/media_publish",
+        data={"creation_id": container_id, "access_token": META_ACCESS_TOKEN},
+        timeout=60
+    ).json()
+    print(f"[Instagram Reels] تم النشر بنجاح: {pub_res}")
+
+
+def assemble_and_publish():
+    print("جاري كتابة القصة عبر Gemini...")
+    story = generate_story()
+    print(f"عنوان القصة: {story['title']}")
+
+    scene_videos = []
     for idx, scene in enumerate(story["scenes"]):
+        print(f"جاري تجهيز المشهد {idx + 1}...")
         clip = create_scene_assets(idx, scene["narration"], scene["image_prompt"])
         scene_videos.append(clip)
 
-    # دمج المشاهد في فيديو نهائي واحد
     with open("inputs.txt", "w") as f:
         for v in scene_videos:
             f.write(f"file '{v}'\n")
 
     final_video = "final_short.mp4"
+    print("جاري دمج الفيديو النهائي...")
     subprocess.run([
         "ffmpeg", "-y", "-f", "concat", "-safe", "0",
         "-i", "inputs.txt", "-c", "copy", final_video
     ], check=True)
 
-    # إرسال الفيديو النهائي إلى تيليجرام (أو ربطه بـ API المنصات)
-    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-        with open(final_video, "rb") as video:
-            requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo",
-                data={"chat_id": TELEGRAM_CHAT_ID, "caption": story["title"]},
-                files={"video": video}
-            )
+    for token in YT_REFRESH_TOKENS:
+        try:
+            upload_to_youtube(final_video, story["title"], token)
+        except Exception as e:
+            print(f"[YouTube Error] {e}")
+
+    if META_ACCESS_TOKEN:
+        for page_id in FB_PAGE_IDS:
+            try:
+                upload_to_facebook_reels(final_video, story["title"], page_id)
+            except Exception as e:
+                print(f"[Facebook Error] {e}")
+
+        for ig_id in IG_USER_IDS:
+            try:
+                upload_to_instagram_reels(final_video, story["title"], ig_id)
+            except Exception as e:
+                print(f"[Instagram Error] {e}")
+
 
 if __name__ == "__main__":
     assemble_and_publish()
