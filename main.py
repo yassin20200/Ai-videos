@@ -2,6 +2,8 @@ import os
 import re
 import json
 import time
+import base64
+import shutil
 import urllib.parse
 import subprocess
 import requests
@@ -24,14 +26,14 @@ GRAPH_API = "https://graph.facebook.com/v21.0"
 def generate_story():
     prompt = """
     أنت كاتب محتوى مبدع متخصص في "حواديت الفواكه والخضروات الناطقة" الشهيرة على يوتيوب شورتس وريلز.
-    اكتب حدوتة قصيرة ممتعة جداً، طريفة، وذات مغزى جميل (مدتها 40-45 ثانية) تدور أحداثها بين الفواكه أو الخضروات داخل المطبخ أو الثلاجة أو سلة الفواكه (مثل: المانجو، الفراولة، الموزة، التفاحة، الأفوكادو، البطيخة، الليمونة).
+    اكتب حدوتة قصيرة ممتعة جداً، طريفة، وذات مغزى جميل (مدتها 40-45 ثانية) تدور أحداثها بين الفواكه أو الخضروات داخل المطبخ أو سلة الفواكه (مثل: المانجو، الفراولة، الموزة، التفاحة، الأفوكادو، البطيخة، الليمونة).
     
     القواعد المهمة للقصة:
     1. ابدأ المشهد الأول بجملة خاطفة ومشوقة جداً (Hook) تجذب المشاهد في أول 3 ثوانٍ.
     2. اكتب السرد بأسلوب حكواتي مصري سلس، خفيف الدم، دافئ وممتع جداً للصغار والكبار، مع تشكيل الكلمات لضبط النطق، وبدون أي علامات تنصيص.
     3. اجعل القصة مقسمة إلى 5 مشاهد مترابطة، وكل مشهد بين 15 إلى 22 كلمة.
-    4. اجعل وصف الصورة (image_prompt) باللغة الإنجليزية يصف بدقة شخصيات الفواكه الكرتونية المجسمة بأسلوب:
-       "Cute 3D Pixar Disney animation style, anthropomorphic talking [fruit name] character with big expressive eyes, cute hands and feet, vibrant colors, cinematic kitchen lighting, 8k, vertical 9:16"
+    4. اجعل وصف الصورة (image_prompt) باللغة الإنجليزية قصيراً ومباشراً (أقل من 20 كلمة بدون فواصل أو رموز) يصف شخصية الفاكهة المجسمة:
+       "Cute 3D Pixar animated talking mango fruit character with big eyes and hands in a bright kitchen"
     
     أخرج النتيجة بصيغة JSON فقط بهذا الهيكل:
     {
@@ -39,7 +41,7 @@ def generate_story():
       "scenes": [
         {
           "narration": "النص العربي المشوق للمشهد بدون علامات تنصيص",
-          "image_prompt": "Cute 3D Pixar Disney animation style..."
+          "image_prompt": "Cute 3D Pixar animated talking strawberry character with big expressive eyes smiling in a sunny kitchen"
         }
       ]
     }
@@ -66,7 +68,6 @@ def generate_audio(narration, audio_file):
     clean_text = re.sub(r'["\'«»„“”*]', '', narration).strip()
     plain_text = strip_diacritics(clean_text)
 
-    # استخدام صوت سلمى أو شاكر بنبرة حيوية وممتعة للحدوتة
     attempts = [
         ("ar-EG-SalmaNeural", clean_text),
         ("ar-EG-ShakirNeural", clean_text),
@@ -100,35 +101,77 @@ def generate_audio(narration, audio_file):
 
 
 def download_scene_image(index, image_prompt, img_file):
-    # انتظار 6 ثوانٍ لتفادي حظر الطلبات المتتالية وضمان عدم ظهور أي صورة سوداء
+    # تنظيف الوصف من أي رموز قد تكسر الرابط
+    clean_desc = re.sub(r'[^a-zA-Z0-9 ]', ' ', image_prompt)
+    clean_desc = re.sub(r'\s+', ' ', clean_desc).strip()[:120]
+    full_prompt = f"Cute 3D Pixar Disney animation style {clean_desc} big expressive eyes vibrant studio lighting 3d render"
+
+    # 1. محاولة التوليد السريع عبر Gemini Image API إن توفر
+    try:
+        gem_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key={GEMINI_API_KEY}"
+        gem_payload = {
+            "contents": [{"parts": [{"text": f"Generate a vertical 9:16 3D Pixar style animation image: {full_prompt}"}]}],
+            "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]}
+        }
+        gem_res = requests.post(gem_url, json=gem_payload, timeout=45).json()
+        parts = gem_res.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+        for part in parts:
+            if "inlineData" in part:
+                img_bytes = base64.b64decode(part["inlineData"]["data"])
+                if len(img_bytes) > 5000:
+                    with open(img_file, "wb") as f:
+                        f.write(img_bytes)
+                    print(f"تم تصميم صورة المشهد {index + 1} عبر Gemini 3D", flush=True)
+                    return
+    except Exception:
+        pass
+
+    # 2. التوليد عبر Pollinations بعدة مسارات وموديلات مع حماية ضد الحظر
     if index > 0:
-        time.sleep(6)
+        time.sleep(10)
 
-    styled_prompt = (
-        f"Cute 3D Pixar Disney style animation, {image_prompt[:160]}, "
-        f"expressive face, ultra detailed 3d render, vibrant studio lighting, no text"
-    )
-    encoded_prompt = urllib.parse.quote(styled_prompt)
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    encoded_prompt = urllib.parse.quote(full_prompt, safe='')
+    base_seed = int(time.time()) + (index * 777)
 
-    for attempt, model in enumerate(["flux", "flux", "turbo"]):
+    urls_to_try = [
+        f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=1344&model=flux&nologo=true&seed={base_seed + 1}",
+        f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=1344&model=turbo&nologo=true&seed={base_seed + 2}",
+        f"https://pollinations.ai/p/{encoded_prompt}?width=768&height=1344&model=flux&nologo=true&seed={base_seed + 3}",
+        f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=576&height=1024&nologo=true&seed={base_seed + 4}",
+    ]
+
+    for attempt, img_url in enumerate(urls_to_try):
         try:
-            seed = int(time.time()) + (index * 333) + (attempt * 55)
-            img_url = (
-                f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-                f"?width=1080&height=1920&model={model}&nologo=true&enhance=true&seed={seed}"
-            )
-            res = requests.get(img_url, headers=headers, timeout=90)
-            if res.status_code == 200 and len(res.content) > 12000:
+            headers = {
+                "User-Agent": f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/12{attempt}.0.0.0 Safari/537.36",
+                "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
+            }
+            res = requests.get(img_url, headers=headers, timeout=75)
+            if res.status_code == 200 and len(res.content) > 5000:
                 with open(img_file, "wb") as f:
                     f.write(res.content)
                 print(f"تم تصميم صورة المشهد {index + 1} بجودة 3D Pixar", flush=True)
                 return
         except Exception as e:
-            print(f"إعادة محاولة تحميل صورة المشهد {index + 1}: {e}", flush=True)
-        time.sleep(7)
+            print(f"إعادة محاولة صورة المشهد {index + 1} ({attempt + 1}): {e}", flush=True)
+        time.sleep(10)
 
-    raise RuntimeError(f"تعذر تحميل صورة المشهد {index + 1} من سيرفر الصور")
+    # 3. بديل ذكي يمنع توقف البوت أو ظهور شاشة سوداء: عكس وتقريب المشهد الكرتوني السابق
+    if index > 0 and os.path.exists(f"scene_{index - 1}.jpg"):
+        prev_img = f"scene_{index - 1}.jpg"
+        subprocess.run([
+            "ffmpeg", "-y", "-loglevel", "error", "-i", prev_img,
+            "-vf", "hflip,eq=saturation=1.15:brightness=0.03",
+            "-frames:v", "1", "-update", "1", img_file
+        ], check=True)
+        print(f"تم تجهيز صورة المشهد {index + 1} بزاوية 3D بديلة", flush=True)
+        return
+
+    shutil.copyfile("scene_0.jpg", img_file) if os.path.exists("scene_0.jpg") else subprocess.run([
+        "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
+        "-i", "color=c=0xFF8C00:s=1080x1920:d=1",
+        "-frames:v", "1", "-update", "1", img_file
+    ], check=True)
 
 
 def create_scene_assets(index, narration, image_prompt):
@@ -148,7 +191,6 @@ def create_scene_assets(index, narration, image_prompt):
     fps = 30
     total_frames = int(duration * fps) + 15
 
-    # تنويع حركة الكاميرا بين المشاهد (تقريب للمشاهد الزوجية وتبعيد للمشاهد الفردية)
     if index % 2 == 0:
         z_expr = "min(zoom+0.0014,1.25)"
     else:
@@ -240,7 +282,6 @@ def upload_to_facebook_reels(video_path, title, page_id):
 
 
 def get_public_video_url(video_path):
-    # المحاولة 1: Litterbox Catbox
     try:
         with open(video_path, "rb") as f:
             r = requests.post(
@@ -254,7 +295,6 @@ def get_public_video_url(video_path):
     except Exception as e:
         print(f"تنبيه رفع الرابط الأول: {e}", flush=True)
 
-    # المحاولة 2: Tmpfiles
     with open(video_path, "rb") as f:
         r = requests.post(
             "https://tmpfiles.org/api/v1/upload",
@@ -292,7 +332,6 @@ def wait_and_publish_ig(ig_user_id, container_id):
 def upload_to_instagram_reels(video_path, title, ig_user_id):
     caption = f"{title} 🍓🥭\n\n#حواديت #قصص_الفواكه #حدوتة #reels"
 
-    # الطريقة الأولى: الرفع عبر رابط مباشر لتخطي خطأ rupload 400
     try:
         public_url = get_public_video_url(video_path)
         print(f"[Instagram] جاري إرسال الفيديو عبر الرابط: {public_url}", flush=True)
@@ -312,7 +351,6 @@ def upload_to_instagram_reels(video_path, title, ig_user_id):
     except Exception as e:
         print(f"تنبيه الطريقة الأولى لإنستجرام، جاري التحويل للطريقة المباشرة: {e}", flush=True)
 
-    # الطريقة الثانية الاحتياطية: Resumable Upload بعد ضبط الصيغة القياسية
     file_size = os.path.getsize(video_path)
     init_res = requests.post(
         f"{GRAPH_API}/{ig_user_id}/media",
