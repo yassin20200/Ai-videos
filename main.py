@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import base64
 import urllib.parse
 import subprocess
 import requests
@@ -25,10 +26,10 @@ def generate_story():
     اكتب قصة قصيرة مشوقة وغامضة جداً تصلح لفيديو شورتس وريلز (مدتها حوالي 35-40 ثانية).
     أخرج النتيجة بصيغة JSON فقط بهذا الهيكل:
     {
-      "title": "عنوان مشوق جداً للفيديو",
+      "title": "عنوان مشوق جداً للفيديو بدون علامات تنصيص",
       "scenes": [
         {
-          "narration": "النص العربي للمشهد بالتشكيل الصحيح والواضح",
+          "narration": "النص العربي للمشهد بالتشكيل الواضح وبدون أي علامات تنصيص",
           "image_prompt": "Detailed cinematic vertical 9:16 illustration, dark mysterious atmosphere, 8k, masterpiece"
         }
       ]
@@ -39,7 +40,7 @@ def generate_story():
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"responseMimeType": "application/json"}
     }
-    for model in ["gemini-4.0-argon", "gemini-2.5-pro", "gemini-2.5-flash"]:
+    for model in ["gemini-2.5-pro", "gemini-2.5-flash"]:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
         res = requests.post(url, json=payload, timeout=60).json()
         if "candidates" in res:
@@ -49,12 +50,92 @@ def generate_story():
     raise RuntimeError(f"فشل الاتصال بـ Gemini API: {res}")
 
 
+def generate_audio(narration, audio_file):
+    clean_text = narration.replace('"', '').replace("'", "").replace("«", "").replace("»", "").strip()
+
+    # 1. محاولة التوليد عبر Edge-TTS
+    for voice in ["ar-EG-ShakirNeural", "ar-SA-HamedNeural"]:
+        try:
+            subprocess.run([
+                "edge-tts", "--voice", voice,
+                "--text", clean_text, "--write-media", audio_file
+            ], check=True, timeout=30)
+            if os.path.exists(audio_file) and os.path.getsize(audio_file) > 500:
+                print(f"تم توليد الصوت عبر Edge-TTS ({voice})")
+                return
+        except Exception as e:
+            print(f"تنبيه Edge-TTS ({voice}): {e}")
+
+    # 2. البديل الأول: Gemini Native TTS
+    try:
+        tts_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key={GEMINI_API_KEY}"
+        tts_payload = {
+            "contents": [{"parts": [{"text": clean_text}]}],
+            "generationConfig": {
+                "responseModalities": ["AUDIO"],
+                "speechConfig": {
+                    "voiceConfig": {"prebuiltVoiceConfig": {"voiceName": "Orus"}}
+                }
+            }
+        }
+        res = requests.post(tts_url, json=tts_payload, timeout=60).json()
+        pcm_b64 = res["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
+        pcm_file = f"{audio_file}.pcm"
+        with open(pcm_file, "wb") as f:
+            f.write(base64.b64decode(pcm_b64))
+        subprocess.run([
+            "ffmpeg", "-y", "-f", "s16le", "-ar", "24000", "-ac", "1",
+            "-i", pcm_file, audio_file
+        ], check=True)
+        if os.path.exists(audio_file) and os.path.getsize(audio_file) > 500:
+            print("تم توليد الصوت عبر Gemini TTS")
+            return
+    except Exception as e:
+        print(f"تنبيه Gemini TTS: {e}")
+
+    # 3. البديل الثاني المضمون: Google TTS مع تحسين الصوت بـ FFmpeg
+    print("جاري استخدام البديل المضمون Google TTS...")
+    raw_mp3 = f"raw_{audio_file}"
+    encoded_text = urllib.parse.quote(clean_text)
+    gtts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=ar&q={encoded_text}"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    r = requests.get(gtts_url, headers=headers, timeout=30)
+    r.raise_for_status()
+    with open(raw_mp3, "wb") as f:
+        f.write(r.content)
+    subprocess.run([
+        "ffmpeg", "-y", "-i", raw_mp3,
+        "-af", "asetrate=24000*0.92,aresample=24000,atempo=1.18",
+        audio_file
+    ], check=True)
+
+
+def download_scene_image(index, image_prompt, img_file):
+    encoded_prompt = urllib.parse.quote(image_prompt)
+    headers = {"User-Agent": "Mozilla/5.0"}
+    for attempt in range(3):
+        try:
+            seed = int(time.time()) + index + (attempt * 10)
+            img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&model=flux&nologo=true&seed={seed}"
+            res = requests.get(img_url, headers=headers, timeout=90)
+            if res.status_code == 200 and len(res.content) > 1000:
+                with open(img_file, "wb") as f:
+                    f.write(res.content)
+                return
+        except Exception as e:
+            print(f"محاولة تحميل الصورة {attempt + 1} فشلت: {e}")
+        time.sleep(3)
+
+    # خلفية احتياطية في حال تعطل سيرفر الصور
+    subprocess.run([
+        "ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=0x111118:s=1080x1920:d=1",
+        "-frames:v", "1", img_file
+    ], check=True)
+
+
 def create_scene_assets(index, narration, image_prompt):
     audio_file = f"scene_{index}.mp3"
-    subprocess.run([
-        "edge-tts", "--voice", "ar-EG-ShakirNeural", "--rate", "+5%",
-        "--text", narration, "--write-media", audio_file
-    ], check=True)
+    generate_audio(narration, audio_file)
 
     probe = subprocess.run([
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -62,12 +143,8 @@ def create_scene_assets(index, narration, image_prompt):
     ], capture_output=True, text=True, check=True)
     duration = float(probe.stdout.strip())
 
-    encoded_prompt = urllib.parse.quote(image_prompt)
-    img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&model=flux&nologo=true&seed={int(time.time()) + index}"
     img_file = f"scene_{index}.jpg"
-    img_data = requests.get(img_url, timeout=90).content
-    with open(img_file, "wb") as f:
-        f.write(img_data)
+    download_scene_image(index, image_prompt, img_file)
 
     video_file = f"scene_{index}.mp4"
     fps = 30
