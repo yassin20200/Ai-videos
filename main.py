@@ -48,6 +48,7 @@ def generate_story():
             return json.loads(text)
     raise RuntimeError(f"فشل الاتصال بـ Gemini API: {res}")
 
+
 def create_scene_assets(index, narration, image_prompt):
     audio_file = f"scene_{index}.mp3"
     subprocess.run([
@@ -72,14 +73,15 @@ def create_scene_assets(index, narration, image_prompt):
     fps = 30
     total_frames = int(duration * fps) + 15
     zoom_filter = (
-        f"scale=2160:3840,"
+        f"scale=1280:2276,"
         f"zoompan=z='min(zoom+0.0012,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
         f"d={total_frames}:s=1080x1920:fps={fps}"
     )
     subprocess.run([
         "ffmpeg", "-y", "-loop", "1", "-i", img_file, "-i", audio_file,
-        "-vf", zoom_filter, "-c:v", "libx264", "-t", str(duration),
-        "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", video_file
+        "-vf", zoom_filter, "-c:v", "libx264", "-preset", "ultrafast",
+        "-t", str(duration), "-pix_fmt", "yuv420p", "-c:a", "aac",
+        "-shortest", video_file
     ], check=True)
     return video_file
 
