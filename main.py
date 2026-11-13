@@ -10,11 +10,12 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-# تثبيت مكتبات رسم الترجمة العربية على الفيديو تلقائياً
+# تثبيت مكتبة الاتصال بكروت الشاشة المجانية على Hugging Face ومكتبات الترجمة
 subprocess.run([
-    "pip", "install", "-q", "pillow", "arabic-reshaper", "python-bidi"
+    "pip", "install", "-q", "gradio_client", "pillow", "arabic-reshaper", "python-bidi"
 ], check=False)
 
+from gradio_client import Client, handle_file
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display
@@ -30,14 +31,14 @@ IG_USER_IDS = [i.strip() for i in os.getenv("IG_USER_IDS", "").split(",") if i.s
 META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "").strip()
 
 GRAPH_API = "https://graph.facebook.com/v21.0"
-FONT_PATH = "Cairo-Bold.ttf"
+FONT_PATH = "Cairo-Black.ttf"
 
 
 def ensure_arabic_font():
     if os.path.exists(FONT_PATH) and os.path.getsize(FONT_PATH) > 10000:
         return FONT_PATH
     try:
-        url = "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Bold.ttf"
+        url = "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Black.ttf"
         r = requests.get(url, timeout=30)
         if r.ok:
             with open(FONT_PATH, "wb") as f:
@@ -50,23 +51,26 @@ def ensure_arabic_font():
 
 def generate_story():
     prompt = """
-    أنت كاتب سكريبتات شورتس وريلز محترف. اكتب حدوتة كوميدية سريعة وخفيفة الدم جداً باللهجة المصرية العامية الطبيعية (بدون أي تشكيل أو حركات إعراب نهائياً) تدور بين الفواكه المجسمة في المطبخ.
+    أنت صانع أفلام شورتس درامية وكوميدية على غرار قناة "Fruits AI" الشهيرة.
+    اكتب قصة درامية قصيرة ومشوقة جداً (5 مشاهد سريعة) بالعامية المصرية السلسة (بدون أي تشكيل نهائياً) تدور حول شخصيات بشرية لها رؤوس فواكه (مثلاً: طفل برأس فراولة، أب غاضب برأس بطيخة أو فراولة، دكتور برأس موزة يرتدي بالطو أبيض ونظارة، طلاب برؤوس توت أو مانجو في المدرسة).
 
-    قواعد صارمة لنجاح الفيديو:
-    1. اكتب 6 مشاهد سريعة ومتتالية، كل مشهد من 10 إلى 14 كلمة فقط بالعامية المصرية السلسة (ممنوع الفصحى وممنوع التشكيل).
-    2. وزع الحوار بين صوتين: "male" (للراوي أو الفاكهة الأولى مثل المانجا/الموز) و"female" (للفاكهة الثانية مثل الفراولة/التفاحة) ليكون حواراً تمثيلياً ممتعاً.
-    3. ابدأ المشهد الأول بجملة صادمة أو مضحكة تخطف الانتباه فوراً.
-    4. اجعل وصف الصورة (image_prompt) بالإنجليزية (أقل من 18 كلمة بدون فواصل أو رموز) يصف شكل الفاكهة الكرتونية وتعبيرات وجهها بدقة بأسلوب:
-       "Cute 3D Pixar animation of an angry talking red strawberry character with big eyes in a bright kitchen"
+    قواعد صارمة:
+    1. اكتب الحوار كتمثيل مباشر بين الشخصيات بالعامية المصرية الطبيعية بدون تشكيل، وكل مشهد من 8 إلى 12 كلمة فقط.
+    2. حدد نوع المتحدث في كل مشهد: "male" (للأب أو الدكتور أو الولد) أو "female" (للأم أو البنت).
+    3. اكتب وصف الصورة (image_prompt) بالإنجليزية ليصف شخصية بجسم بشري يرتدي ملابس عادية ورأس فاكهة كبير بتعبيرات وجه درامية واضحة مثل:
+       "3D Pixar animation of a sad boy with a giant strawberry head wearing a striped hoodie crying at a dinner table while an angry father with a giant strawberry head in a plaid shirt yells"
+    4. اكتب وصف الحركة (motion_prompt) بالإنجليزية لتحريك الفيديو مثل:
+       "The strawberry character is talking expressively with mouth moving, gesturing with hands, blinking, cinematic 3d animation"
 
     أخرج النتيجة بصيغة JSON فقط بهذا الهيكل:
     {
-      "title": "عنوان مصري قصير ومشوق للحدوتة",
+      "title": "عنوان درامي مشوق للحدوتة",
       "scenes": [
         {
           "speaker": "male",
-          "narration": "الجملة بالعامية المصرية بدون تشكيل",
-          "image_prompt": "Cute 3D Pixar animation of a proud yellow mango character wearing sunglasses in a kitchen"
+          "narration": "الجملة التمثيلية بالعامية المصرية بدون تشكيل",
+          "image_prompt": "3D Pixar animation of a character with a giant strawberry head wearing a hoodie...",
+          "motion_prompt": "Character talking expressively, mouth moving, head nodding, smooth 3D animation"
         }
       ]
     }
@@ -79,7 +83,7 @@ def generate_story():
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
         res = requests.post(url, json=payload, timeout=60).json()
         if "candidates" in res:
-            print(f"تم تأليف السكريبت التمثيلي عبر: {model}", flush=True)
+            print(f"تم تأليف القصة عبر: {model}", flush=True)
             text = res["candidates"][0]["content"]["parts"][0]["text"]
             return json.loads(text)
     raise RuntimeError(f"فشل الاتصال بـ Gemini API: {res}")
@@ -97,11 +101,11 @@ def generate_audio(narration, speaker, audio_file):
     for voice in [primary_voice, backup_voice]:
         try:
             subprocess.run([
-                "edge-tts", "--voice", voice, "--rate", "+10%",
+                "edge-tts", "--voice", voice, "--rate", "+8%",
                 "--text", clean_text, "--write-media", audio_file
             ], check=True, timeout=30, stderr=subprocess.DEVNULL)
             if os.path.exists(audio_file) and os.path.getsize(audio_file) > 500:
-                print(f"تم تسجيل الصوت ({voice})", flush=True)
+                print(f"تم تسجيل التمثيل الصوتي ({voice})", flush=True)
                 return
         except Exception:
             time.sleep(2)
@@ -121,13 +125,12 @@ def generate_audio(narration, speaker, audio_file):
 
 def download_scene_image(index, image_prompt, img_file):
     clean_desc = re.sub(r'[^a-zA-Z0-9 ]', ' ', image_prompt)
-    clean_desc = re.sub(r'\s+', ' ', clean_desc).strip()[:130]
+    clean_desc = re.sub(r'\s+', ' ', clean_desc).strip()[:150]
     full_prompt = (
-        f"Cute 3D Pixar Disney movie animation, {clean_desc}, "
-        f"expressive face, cute hands, ultra detailed 3D render, vibrant studio lighting, vertical 9:16"
+        f"3D Pixar Disney animation style, anthropomorphic human body wearing clothes with a giant fruit head, "
+        f"{clean_desc}, expressive eyes and mouth, dramatic cinematic lighting, vertical 9:16"
     )
 
-    # 1. المحرك الأول: Hugging Face FLUX.1-schnell (جودة أصلية فائقة)
     if HF_TOKEN:
         for hf_url in [
             "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
@@ -143,98 +146,105 @@ def download_scene_image(index, image_prompt, img_file):
                 if res.status_code == 200 and len(res.content) > 8000:
                     with open(img_file, "wb") as f:
                         f.write(res.content)
-                    print(f"تم تصميم صورة المشهد {index + 1} عبر محرك FLUX.1 الرسمي", flush=True)
+                    print(f"تم تصميم صورة المشهد {index + 1} عبر FLUX.1", flush=True)
                     return
             except Exception:
                 pass
 
-    # 2. المحرك الثاني: Pollinations Flux بدون علامة مائية
     if index > 0:
-        time.sleep(8)
+        time.sleep(7)
 
     encoded_prompt = urllib.parse.quote(full_prompt, safe='')
     base_seed = int(time.time()) + (index * 777)
 
-    urls_to_try = [
-        f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=1344&model=flux&nologo=true&seed={base_seed + 1}",
-        f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=1344&model=turbo&nologo=true&seed={base_seed + 2}",
-        f"https://pollinations.ai/p/{encoded_prompt}?width=768&height=1344&model=flux&nologo=true&seed={base_seed + 3}"
-    ]
-
-    for attempt, img_url in enumerate(urls_to_try):
+    for attempt, model in enumerate(["flux", "turbo", "flux"]):
         try:
-            headers = {"User-Agent": f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/12{attempt}.0.0.0"}
-            res = requests.get(img_url, headers=headers, timeout=75)
+            img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=1344&model={model}&nologo=true&seed={base_seed + attempt}"
+            res = requests.get(img_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=75)
             if res.status_code == 200 and len(res.content) > 8000:
                 with open(img_file, "wb") as f:
                     f.write(res.content)
-                print(f"تم تصميم صورة المشهد {index + 1} بجودة 3D Pixar", flush=True)
+                print(f"تم تصميم صورة المشهد {index + 1} بجودة 3D", flush=True)
                 return
         except Exception:
             pass
-        time.sleep(8)
+        time.sleep(7)
 
     if index > 0 and os.path.exists(f"scene_{index - 1}.jpg"):
-        subprocess.run([
-            "ffmpeg", "-y", "-loglevel", "error", "-i", f"scene_{index - 1}.jpg",
-            "-vf", "hflip,eq=saturation=1.12", "-frames:v", "1", "-update", "1", img_file
-        ], check=True)
+        shutil.copyfile(f"scene_{index - 1}.jpg", img_file)
         return
 
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
-        "-i", "color=c=0xFF8C00:s=1080x1920:d=1",
+        "-i", "color=c=0x222233:s=1080x1920:d=1",
         "-frames:v", "1", "-update", "1", img_file
     ], check=True)
 
 
-def render_subtitle_overlay(text, overlay_png):
+def animate_image_with_ai(index, img_file, motion_prompt, out_raw_video):
+    """تحويل الصورة الثابتة إلى فيديو متحرك حقيقي عبر Hugging Face Spaces GPU مجاناً"""
+    spaces_to_try = [
+        "Lightricks/LTX-Video",
+        "Wan-AI/Wan2.1",
+        "zai-org/CogVideoX-5B-Space"
+    ]
+    for space_id in spaces_to_try:
+        try:
+            print(f"جاري تحريك المشهد {index + 1} بالذكاء الاصطناعي عبر ({space_id})...", flush=True)
+            client = Client(space_id, hf_token=HF_TOKEN if HF_TOKEN else None, verbose=False)
+            result = client.predict(
+                prompt=f"{motion_prompt}, 3D Pixar animation, talking mouth movement, expressive character",
+                image=handle_file(img_file),
+                api_name="/image_to_video"
+            )
+            video_path = result[0] if isinstance(result, (list, tuple)) else result
+            if isinstance(video_path, dict) and "video" in video_path:
+                video_path = video_path["video"]
+            if video_path and os.path.exists(str(video_path)):
+                shutil.copyfile(str(video_path), out_raw_video)
+                print(f"تم تحريك المشهد {index + 1} إلى فيديو فعلي بنجاح!", flush=True)
+                return True
+        except Exception as e:
+            print(f"انتقال لمحرك التحريك التالي للمشهد {index + 1}: { str(e)[:80] }", flush=True)
+    return False
+
+
+def render_karaoke_chunk_png(words_chunk, highlight_idx, png_path):
+    """رسم الترجمة بأسلوب Fruits AI (كلمات بيضاء والكلمة النشطة باللون الأصفر مع حدود سوداء سميكة)"""
     font_file = ensure_arabic_font()
     img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    font = ImageFont.truetype(font_file, 52)
+    font = ImageFont.truetype(font_file, 64)
 
-    clean_text = strip_diacritics(re.sub(r'["\'«»„“”*]', '', text).strip())
-    words = clean_text.split()
-    lines = []
-    current = []
-    for w in words:
-        current.append(w)
-        if len(current) >= 5:
-            lines.append(" ".join(current))
-            current = []
-    if current:
-        lines.append(" ".join(current))
+    y_pos = 1520
+    reshaped_words = [get_display(arabic_reshaper.reshape(w)) for w in words_chunk]
+    # في العربية نرتب الكلمات من اليمين لليسار
+    widths = [draw.textbbox((0, 0), rw, font=font)[2] for rw in reshaped_words]
+    space_w = 24
+    total_w = sum(widths) + space_w * (len(reshaped_words) - 1)
 
-    reshaped_lines = [get_display(arabic_reshaper.reshape(line)) for line in lines[:3]]
+    current_right = (1080 + total_w) // 2
+    for idx, rw in enumerate(reshaped_words):
+        w = widths[idx]
+        x_pos = current_right - w
+        color = (255, 225, 0, 255) if idx == highlight_idx else (255, 255, 255, 255)
 
-    box_top = 1380
-    line_height = 78
-    total_h = len(reshaped_lines) * line_height + 50
-    draw.rounded_rectangle(
-        [(70, box_top), (1010, box_top + total_h)],
-        radius=35,
-        fill=(15, 15, 25, 195),
-        outline=(255, 215, 0, 230),
-        width=4
-    )
+        # حدود سوداء سميكة حول الكلمات كما في Flashloop
+        for dx in (-4, -2, 0, 2, 4):
+            for dy in (-4, -2, 0, 2, 4):
+                if dx != 0 or dy != 0:
+                    draw.text((x_pos + dx, y_pos + dy), rw, font=font, fill=(0, 0, 0, 255))
+        draw.text((x_pos, y_pos), rw, font=font, fill=color)
+        current_right = x_pos - space_w
 
-    y_pos = box_top + 22
-    for r_line in reshaped_lines:
-        bbox = draw.textbbox((0, 0), r_line, font=font)
-        w = bbox[2] - bbox[0]
-        x_pos = (1080 - w) // 2
-        draw.text((x_pos + 3, y_pos + 3), r_line, font=font, fill=(0, 0, 0, 255))
-        draw.text((x_pos, y_pos), r_line, font=font, fill=(255, 245, 157, 255))
-        y_pos += line_height
-
-    img.save(overlay_png, "PNG")
+    img.save(png_path, "PNG")
 
 
 def create_scene_assets(index, scene):
     narration = scene["narration"]
-    speaker = scene.get("speaker", "female" if index % 2 else "male")
+    speaker = scene.get("speaker", "male")
     image_prompt = scene["image_prompt"]
+    motion_prompt = scene.get("motion_prompt", "Character talking expressively, moving hands, 3D animation")
 
     audio_file = f"scene_{index}.mp3"
     generate_audio(narration, speaker, audio_file)
@@ -248,33 +258,77 @@ def create_scene_assets(index, scene):
     img_file = f"scene_{index}.jpg"
     download_scene_image(index, image_prompt, img_file)
 
-    overlay_png = f"sub_{index}.png"
-    render_subtitle_overlay(narration, overlay_png)
-
-    video_file = f"scene_{index}.mp4"
+    raw_ai_video = f"raw_ai_{index}.mp4"
+    base_motion_video = f"base_motion_{index}.mp4"
     fps = 30
     total_frames = int(duration * fps) + 15
 
-    if index % 2 == 0:
-        z_expr = "min(zoom+0.0022,1.28)"
+    # محاولة التحريك بالذكاء الاصطناعي أولاً، وإذا كانت السيرفرات المجانية مزدحمة يطبق تحريك ديناميكي متقدم
+    ai_animated = animate_image_with_ai(index, img_file, motion_prompt, raw_ai_video)
+
+    if ai_animated and os.path.exists(raw_ai_video):
+        subprocess.run([
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-stream_loop", "-1", "-i", raw_ai_video,
+            "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1",
+            "-t", str(duration), "-r", str(fps), "-c:v", "libx264", "-preset", "veryfast",
+            "-an", base_motion_video
+        ], check=True)
     else:
-        z_expr = "if(eq(on,1),1.28,max(zoom-0.0022,1.0))"
+        # تحريك ديناميكي يحاكي نبض الكاميرا وحركة التحدث مع الصوت
+        z_expr = "1.08+0.04*sin(on/4)+0.0015*on"
+        x_expr = "iw/2-(iw/zoom/2)+18*sin(on/6)"
+        y_expr = "ih/2-(ih/zoom/2)+12*cos(on/5)"
+        zoom_filter = (
+            f"scale=1440:2560:force_original_aspect_ratio=increase,crop=1440:2560,"
+            f"eq=saturation=1.15:contrast=1.05,"
+            f"zoompan=z='{z_expr}':x='{x_expr}':y='{y_expr}':"
+            f"d={total_frames}:s=1080x1920:fps={fps},setsar=1"
+        )
+        subprocess.run([
+            "ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-i", img_file,
+            "-vf", zoom_filter, "-t", str(duration), "-r", str(fps),
+            "-c:v", "libx264", "-preset", "veryfast", "-an", base_motion_video
+        ], check=True)
 
-    filter_complex = (
-        f"[0:v]scale=1440:2560:force_original_aspect_ratio=increase,crop=1440:2560,"
-        f"eq=saturation=1.15:contrast=1.05,"
-        f"zoompan=z='{z_expr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-        f"d={total_frames}:s=1080x1920:fps={fps},setsar=1[bg];"
-        f"[bg][1:v]overlay=0:0,format=yuv420p[v]"
-    )
+    # تقسيم النص إلى مجموعات من 3 كلمات وتلوين الكلمة المنطوقة بالأصفر بالتتابع
+    clean_words = strip_diacritics(re.sub(r'["\'«»„“”*]', '', narration).strip()).split()
+    if not clean_words:
+        clean_words = ["..."]
 
+    chunks = [clean_words[i:i + 3] for i in range(0, len(clean_words), 3)]
+    steps = []
+    for ch in chunks:
+        for w_idx in range(len(ch)):
+            steps.append((ch, w_idx))
+
+    step_dur = duration / max(len(steps), 1)
+    inputs_cmd = ["-i", base_motion_video, "-i", audio_file]
+    filter_parts = []
+    last_stream = "[0:v]"
+
+    for s_idx, (ch_words, hi_idx) in enumerate(steps):
+        png_file = f"sub_{index}_{s_idx}.png"
+        render_karaoke_chunk_png(ch_words, hi_idx, png_file)
+        inputs_cmd.extend(["-loop", "1", "-i", png_file])
+        start_t = round(s_idx * step_dur, 2)
+        end_t = round((s_idx + 1) * step_dur, 2)
+        next_stream = f"[v{s_idx}]"
+        inp_idx = s_idx + 2
+        filter_parts.append(
+            f"{last_stream}[{inp_idx}:v]overlay=0:0:enable='between(t,{start_t},{end_t})'{next_stream}"
+        )
+        last_stream = next_stream
+
+    filter_parts.append(f"{last_stream}format=yuv420p[vout]")
+    filter_complex = ";".join(filter_parts)
+
+    video_file = f"scene_{index}.mp4"
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
-        "-loop", "1", "-i", img_file,
-        "-loop", "1", "-i", overlay_png,
-        "-i", audio_file,
+        *inputs_cmd,
         "-filter_complex", filter_complex,
-        "-map", "[v]", "-map", "2:a",
+        "-map", "[vout]", "-map", "1:a",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
         "-t", str(duration), "-c:a", "aac", "-ar", "44100", "-ac", "2",
         "-shortest", video_file
@@ -294,9 +348,9 @@ def upload_to_youtube(video_path, title, refresh_token):
 
     body = {
         "snippet": {
-            "title": f"{title[:80]} 🍓🥭 #shorts",
-            "description": f"{title}\n\n#حواديت #قصص_الفواكه #حدوتة #انيميشن #shorts",
-            "tags": ["shorts", "حواديت", "قصص الفواكه", "انيميشن", "حدوتة"],
+            "title": f"{title[:80]} 🍓🍌 #shorts",
+            "description": f"{title}\n\n#حواديت #قصص_الفواكه #انيميشن #fruits_ai #shorts",
+            "tags": ["shorts", "حواديت", "قصص الفواكه", "انيميشن", "fruits ai"],
             "categoryId": "24"
         },
         "status": {
@@ -337,7 +391,7 @@ def upload_to_facebook_reels(video_path, title, page_id):
             "upload_phase": "finish",
             "video_id": video_id,
             "video_state": "PUBLISHED",
-            "description": f"{title} 🍓🍍\n\n#حواديت #قصص_الفواكه #حدوتة #reels",
+            "description": f"{title} 🍓🍌\n\n#حواديت #قصص_الفواكه #انيميشن #reels",
             "access_token": META_ACCESS_TOKEN
         },
         timeout=60
@@ -372,7 +426,6 @@ def get_public_video_url(video_path):
 
 
 def wait_and_publish_ig(ig_user_id, container_id):
-    # انتظار انتهاء معالجة الفيديو داخل سيرفرات إنستجرام
     for _ in range(40):
         status_res = requests.get(
             f"{GRAPH_API}/{container_id}",
@@ -386,7 +439,6 @@ def wait_and_publish_ig(ig_user_id, container_id):
             raise RuntimeError(f"رفض إنستجرام معالجة الفيديو: {status_res}")
         time.sleep(6)
 
-    # إعادة محاولة النشر تلقائياً إذا ظهر كود 9007 (Media is not ready)
     for attempt in range(8):
         pub_res = requests.post(
             f"{GRAPH_API}/{ig_user_id}/media_publish",
@@ -396,18 +448,15 @@ def wait_and_publish_ig(ig_user_id, container_id):
         if "id" in pub_res:
             print(f"[Instagram Reels] تم النشر بنجاح: {pub_res['id']}", flush=True)
             return
-        err_code = pub_res.get("error", {}).get("code")
-        if err_code == 9007:
-            print(f"[Instagram] جاري انتظار اكتمال المعالجة النهائية ({attempt + 1}/8)...", flush=True)
+        if pub_res.get("error", {}).get("code") == 9007:
+            print(f"[Instagram] انتظار جاهزية النشر النهائي ({attempt + 1}/8)...", flush=True)
             time.sleep(10)
         else:
             raise RuntimeError(f"فشل نشر إنستجرام: {pub_res}")
 
-    raise RuntimeError("استغرق سيرفر إنستجرام وقتاً أطول من المعتاد لمعالجة الفيديو")
-
 
 def upload_to_instagram_reels(video_path, title, ig_user_id):
-    caption = f"{title} 🍓🥭\n\n#حواديت #قصص_الفواكه #حدوتة #reels"
+    caption = f"{title} 🍓🍌\n\n#حواديت #قصص_الفواكه #انيميشن #reels"
     public_url = get_public_video_url(video_path)
     print(f"[Instagram] جاري إرسال الفيديو عبر الرابط: {public_url}", flush=True)
 
@@ -429,13 +478,13 @@ def upload_to_instagram_reels(video_path, title, ig_user_id):
 
 
 def assemble_and_publish():
-    print("جاري تأليف حدوتة الفواكه التمثيلية عبر Gemini...", flush=True)
+    print("جاري تأليف دراما الفواكه بأسلوب Fruits AI...", flush=True)
     story = generate_story()
-    print(f"عنوان الحدوتة: {story['title']}", flush=True)
+    print(f"عنوان القصة: {story['title']}", flush=True)
 
     scene_videos = []
     for idx, scene in enumerate(story["scenes"]):
-        print(f"جاري تجهيز المشهد {idx + 1}...", flush=True)
+        print(f"جاري تجهيز وتحريك المشهد {idx + 1}...", flush=True)
         clip = create_scene_assets(idx, scene)
         scene_videos.append(clip)
 
@@ -443,23 +492,12 @@ def assemble_and_publish():
         for v in scene_videos:
             f.write(f"file '{v}'\n")
 
-    merged_video = "merged_short.mp4"
     final_video = "final_short.mp4"
-    print("جاري دمج المشاهد وإضافة الخلفية الصوتية...", flush=True)
+    print("جاري دمج الفيديو النهائي...", flush=True)
 
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
-        "-i", "inputs.txt", "-c", "copy", merged_video
-    ], check=True)
-
-    # إضافة نغمة خلفية هادئة جداً تحت الحوار لكسر الصمت وضبط معايير يوتيوب وإنستجرام
-    subprocess.run([
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-i", merged_video,
-        "-f", "lavfi", "-i", "sine=frequency=432:sample_rate=44100",
-        "-filter_complex",
-        "[1:a]volume=0.015,lowpass=f=300[bg];[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2[a]",
-        "-map", "0:v", "-map", "[a]",
+        "-i", "inputs.txt",
         "-vf", "scale=1080:1920,setsar=1,format=yuv420p",
         "-r", "30", "-c:v", "libx264", "-preset", "fast", "-profile:v", "high",
         "-level", "4.0", "-crf", "18", "-c:a", "aac", "-ar", "44100",
