@@ -1,7 +1,7 @@
 import os
+import re
 import json
 import time
-import base64
 import urllib.parse
 import subprocess
 import requests
@@ -23,18 +23,26 @@ GRAPH_API = "https://graph.facebook.com/v21.0"
 
 def generate_story():
     prompt = """
-    اكتب قصة قصيرة مشوقة وغامضة جداً تصلح لفيديو شورتس وريلز (مدتها حوالي 35-40 ثانية).
+    أنت كاتب محتوى مبدع متخصص في "حواديت الفواكه والخضروات الناطقة" الشهيرة على يوتيوب شورتس وريلز.
+    اكتب حدوتة قصيرة ممتعة جداً، طريفة، وذات مغزى جميل (مدتها 40-45 ثانية) تدور أحداثها بين الفواكه أو الخضروات داخل المطبخ أو الثلاجة أو سلة الفواكه (مثل: المانجو، الفراولة، الموزة، التفاحة، الأفوكادو، البطيخة، الليمونة).
+    
+    القواعد المهمة للقصة:
+    1. ابدأ المشهد الأول بجملة خاطفة ومشوقة جداً (Hook) تجذب المشاهد في أول 3 ثوانٍ.
+    2. اكتب السرد بأسلوب حكواتي مصري سلس، خفيف الدم، دافئ وممتع جداً للصغار والكبار، مع تشكيل الكلمات لضبط النطق، وبدون أي علامات تنصيص.
+    3. اجعل القصة مقسمة إلى 5 مشاهد مترابطة، وكل مشهد بين 15 إلى 22 كلمة.
+    4. اجعل وصف الصورة (image_prompt) باللغة الإنجليزية يصف بدقة شخصيات الفواكه الكرتونية المجسمة بأسلوب:
+       "Cute 3D Pixar Disney animation style, anthropomorphic talking [fruit name] character with big expressive eyes, cute hands and feet, vibrant colors, cinematic kitchen lighting, 8k, vertical 9:16"
+    
     أخرج النتيجة بصيغة JSON فقط بهذا الهيكل:
     {
-      "title": "عنوان مشوق جداً للفيديو بدون علامات تنصيص",
+      "title": "عنوان جذاب ومشوق للحدوتة بدون علامات تنصيص",
       "scenes": [
         {
-          "narration": "النص العربي للمشهد بالتشكيل الواضح وبدون أي علامات تنصيص",
-          "image_prompt": "Detailed cinematic vertical 9:16 illustration, dark mysterious atmosphere, 8k, masterpiece"
+          "narration": "النص العربي المشوق للمشهد بدون علامات تنصيص",
+          "image_prompt": "Cute 3D Pixar Disney animation style..."
         }
       ]
     }
-    اجعل القصة مقسمة إلى 5 مشاهد مترابطة ومتتالية.
     """
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
@@ -44,93 +52,83 @@ def generate_story():
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
         res = requests.post(url, json=payload, timeout=60).json()
         if "candidates" in res:
-            print(f"تم توليد القصة باستخدام: {model}")
+            print(f"تم تأليف الحدوتة باستخدام: {model}", flush=True)
             text = res["candidates"][0]["content"]["parts"][0]["text"]
             return json.loads(text)
     raise RuntimeError(f"فشل الاتصال بـ Gemini API: {res}")
 
 
-def generate_audio(narration, audio_file):
-    clean_text = narration.replace('"', '').replace("'", "").replace("«", "").replace("»", "").strip()
+def strip_diacritics(text):
+    return re.sub(r'[\u0617-\u061A\u064B-\u0652]', '', text)
 
-    # 1. محاولة التوليد عبر Edge-TTS
-    for voice in ["ar-EG-ShakirNeural", "ar-SA-HamedNeural"]:
+
+def generate_audio(narration, audio_file):
+    clean_text = re.sub(r'["\'«»„“”*]', '', narration).strip()
+    plain_text = strip_diacritics(clean_text)
+
+    # استخدام صوت سلمى أو شاكر بنبرة حيوية وممتعة للحدوتة
+    attempts = [
+        ("ar-EG-SalmaNeural", clean_text),
+        ("ar-EG-ShakirNeural", clean_text),
+        ("ar-EG-SalmaNeural", plain_text),
+        ("ar-EG-ShakirNeural", plain_text)
+    ]
+    for voice, txt in attempts:
         try:
             subprocess.run([
-                "edge-tts", "--voice", voice,
-                "--text", clean_text, "--write-media", audio_file
-            ], check=True, timeout=30)
+                "edge-tts", "--voice", voice, "--rate", "+6%",
+                "--text", txt, "--write-media", audio_file
+            ], check=True, timeout=30, stderr=subprocess.DEVNULL)
             if os.path.exists(audio_file) and os.path.getsize(audio_file) > 500:
-                print(f"تم توليد الصوت عبر Edge-TTS ({voice})")
+                print(f"تم توليد الصوت بنجاح ({voice})", flush=True)
                 return
-        except Exception as e:
-            print(f"تنبيه Edge-TTS ({voice}): {e}")
+        except Exception:
+            time.sleep(2)
 
-    # 2. البديل الأول: Gemini Native TTS
-    try:
-        tts_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key={GEMINI_API_KEY}"
-        tts_payload = {
-            "contents": [{"parts": [{"text": clean_text}]}],
-            "generationConfig": {
-                "responseModalities": ["AUDIO"],
-                "speechConfig": {
-                    "voiceConfig": {"prebuiltVoiceConfig": {"voiceName": "Orus"}}
-                }
-            }
-        }
-        res = requests.post(tts_url, json=tts_payload, timeout=60).json()
-        pcm_b64 = res["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
-        pcm_file = f"{audio_file}.pcm"
-        with open(pcm_file, "wb") as f:
-            f.write(base64.b64decode(pcm_b64))
-        subprocess.run([
-            "ffmpeg", "-y", "-f", "s16le", "-ar", "24000", "-ac", "1",
-            "-i", pcm_file, audio_file
-        ], check=True)
-        if os.path.exists(audio_file) and os.path.getsize(audio_file) > 500:
-            print("تم توليد الصوت عبر Gemini TTS")
-            return
-    except Exception as e:
-        print(f"تنبيه Gemini TTS: {e}")
-
-    # 3. البديل الثاني المضمون: Google TTS مع تحسين الصوت بـ FFmpeg
-    print("جاري استخدام البديل المضمون Google TTS...")
+    print("جاري استخدام البديل الصوتي Google TTS...", flush=True)
     raw_mp3 = f"raw_{audio_file}"
-    encoded_text = urllib.parse.quote(clean_text)
+    encoded_text = urllib.parse.quote(plain_text)
     gtts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=ar&q={encoded_text}"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    r = requests.get(gtts_url, headers=headers, timeout=30)
+    r = requests.get(gtts_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
     r.raise_for_status()
     with open(raw_mp3, "wb") as f:
         f.write(r.content)
     subprocess.run([
-        "ffmpeg", "-y", "-i", raw_mp3,
-        "-af", "asetrate=24000*0.92,aresample=24000,atempo=1.18",
-        audio_file
+        "ffmpeg", "-y", "-loglevel", "error", "-i", raw_mp3,
+        "-af", "atempo=1.15", audio_file
     ], check=True)
 
 
 def download_scene_image(index, image_prompt, img_file):
-    encoded_prompt = urllib.parse.quote(image_prompt)
-    headers = {"User-Agent": "Mozilla/5.0"}
-    for attempt in range(3):
+    # انتظار 6 ثوانٍ لتفادي حظر الطلبات المتتالية وضمان عدم ظهور أي صورة سوداء
+    if index > 0:
+        time.sleep(6)
+
+    styled_prompt = (
+        f"Cute 3D Pixar Disney style animation, {image_prompt[:160]}, "
+        f"expressive face, ultra detailed 3d render, vibrant studio lighting, no text"
+    )
+    encoded_prompt = urllib.parse.quote(styled_prompt)
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
+    for attempt, model in enumerate(["flux", "flux", "turbo"]):
         try:
-            seed = int(time.time()) + index + (attempt * 10)
-            img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&model=flux&nologo=true&seed={seed}"
+            seed = int(time.time()) + (index * 333) + (attempt * 55)
+            img_url = (
+                f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+                f"?width=1080&height=1920&model={model}&nologo=true&enhance=true&seed={seed}"
+            )
             res = requests.get(img_url, headers=headers, timeout=90)
-            if res.status_code == 200 and len(res.content) > 1000:
+            if res.status_code == 200 and len(res.content) > 12000:
                 with open(img_file, "wb") as f:
                     f.write(res.content)
+                print(f"تم تصميم صورة المشهد {index + 1} بجودة 3D Pixar", flush=True)
                 return
         except Exception as e:
-            print(f"محاولة تحميل الصورة {attempt + 1} فشلت: {e}")
-        time.sleep(3)
+            print(f"إعادة محاولة تحميل صورة المشهد {index + 1}: {e}", flush=True)
+        time.sleep(7)
 
-    # خلفية احتياطية في حال تعطل سيرفر الصور
-    subprocess.run([
-        "ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=0x111118:s=1080x1920:d=1",
-        "-frames:v", "1", img_file
-    ], check=True)
+    raise RuntimeError(f"تعذر تحميل صورة المشهد {index + 1} من سيرفر الصور")
 
 
 def create_scene_assets(index, narration, image_prompt):
@@ -149,15 +147,24 @@ def create_scene_assets(index, narration, image_prompt):
     video_file = f"scene_{index}.mp4"
     fps = 30
     total_frames = int(duration * fps) + 15
+
+    # تنويع حركة الكاميرا بين المشاهد (تقريب للمشاهد الزوجية وتبعيد للمشاهد الفردية)
+    if index % 2 == 0:
+        z_expr = "min(zoom+0.0014,1.25)"
+    else:
+        z_expr = "if(eq(on,1),1.25,max(zoom-0.0014,1.0))"
+
     zoom_filter = (
-        f"scale=1280:2276,"
-        f"zoompan=z='min(zoom+0.0012,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-        f"d={total_frames}:s=1080x1920:fps={fps}"
+        f"scale=1440:2560:force_original_aspect_ratio=increase,crop=1440:2560,"
+        f"eq=saturation=1.12:contrast=1.04,"
+        f"zoompan=z='{z_expr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+        f"d={total_frames}:s=1080x1920:fps={fps},setsar=1,format=yuv420p"
     )
     subprocess.run([
-        "ffmpeg", "-y", "-loop", "1", "-i", img_file, "-i", audio_file,
-        "-vf", zoom_filter, "-c:v", "libx264", "-preset", "ultrafast",
-        "-t", str(duration), "-pix_fmt", "yuv420p", "-c:a", "aac",
+        "ffmpeg", "-y", "-loglevel", "error", "-loop", "1",
+        "-i", img_file, "-i", audio_file,
+        "-vf", zoom_filter, "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-t", str(duration), "-c:a", "aac", "-ar", "44100", "-ac", "2",
         "-shortest", video_file
     ], check=True)
     return video_file
@@ -172,11 +179,18 @@ def upload_to_youtube(video_path, title, refresh_token):
         client_secret=YT_CLIENT_SECRET
     )
     youtube = build("youtube", "v3", credentials=creds)
+
+    ch_res = youtube.channels().list(part="snippet", mine=True).execute()
+    if ch_res.get("items"):
+        ch_title = ch_res["items"][0]["snippet"]["title"]
+        ch_id = ch_res["items"][0]["id"]
+        print(f"[YouTube] جاري النشر على قناة: {ch_title} ({ch_id})", flush=True)
+
     body = {
         "snippet": {
-            "title": f"{title[:80]} #shorts",
-            "description": f"{title}\n\n#قصص #حكايات #غموض #shorts",
-            "tags": ["shorts", "قصص", "حكايات", "غموض"],
+            "title": f"{title[:80]} 🍓🥭 #shorts",
+            "description": f"{title}\n\n#حواديت #قصص_الفواكه #حدوتة #انيميشن #shorts",
+            "tags": ["shorts", "حواديت", "قصص الفواكه", "انيميشن", "حدوتة"],
             "categoryId": "24"
         },
         "status": {
@@ -186,7 +200,7 @@ def upload_to_youtube(video_path, title, refresh_token):
     }
     media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
     res = youtube.videos().insert(part="snippet,status", body=body, media_body=media).execute()
-    print(f"[YouTube] تم الرفع بنجاح: https://youtu.be/{res['id']}")
+    print(f"[YouTube] تم الرفع بنجاح: https://youtu.be/{res['id']}", flush=True)
 
 
 def upload_to_facebook_reels(video_path, title, page_id):
@@ -201,12 +215,15 @@ def upload_to_facebook_reels(video_path, title, page_id):
     upload_url = init_res["upload_url"]
 
     with open(video_path, "rb") as f:
-        headers = {
-            "Authorization": f"OAuth {META_ACCESS_TOKEN}",
-            "offset": "0",
-            "file_size": str(file_size)
-        }
-        requests.post(upload_url, headers=headers, data=f, timeout=180).raise_for_status()
+        video_bytes = f.read()
+
+    headers = {
+        "Authorization": f"OAuth {META_ACCESS_TOKEN}",
+        "offset": "0",
+        "file_size": str(file_size),
+        "Content-Type": "application/octet-stream"
+    }
+    requests.post(upload_url, headers=headers, data=video_bytes, timeout=180).raise_for_status()
 
     finish_res = requests.post(
         f"{GRAPH_API}/{page_id}/video_reels",
@@ -214,64 +231,127 @@ def upload_to_facebook_reels(video_path, title, page_id):
             "upload_phase": "finish",
             "video_id": video_id,
             "video_state": "PUBLISHED",
-            "description": f"{title}\n\n#قصص #حكايات #غموض #reels",
+            "description": f"{title} 🍓🍍\n\n#حواديت #قصص_الفواكه #حدوتة #reels",
             "access_token": META_ACCESS_TOKEN
         },
         timeout=60
     ).json()
-    print(f"[Facebook Reels] تم النشر بنجاح: {finish_res}")
+    print(f"[Facebook Reels] تم النشر بنجاح: {finish_res}", flush=True)
 
 
-def upload_to_instagram_reels(video_path, title, ig_user_id):
-    file_size = os.path.getsize(video_path)
-    init_res = requests.post(
-        f"{GRAPH_API}/{ig_user_id}/media",
-        data={
-            "media_type": "REELS",
-            "upload_type": "resumable",
-            "caption": f"{title}\n\n#قصص #حكايات #غموض #reels",
-            "access_token": META_ACCESS_TOKEN
-        },
-        timeout=30
-    ).json()
+def get_public_video_url(video_path):
+    # المحاولة 1: Litterbox Catbox
+    try:
+        with open(video_path, "rb") as f:
+            r = requests.post(
+                "https://litterbox.catbox.moe/resources/internals/api.php",
+                data={"reqtype": "fileupload", "time": "1h"},
+                files={"fileToUpload": f},
+                timeout=120
+            )
+        if r.ok and r.text.strip().startswith("https://"):
+            return r.text.strip()
+    except Exception as e:
+        print(f"تنبيه رفع الرابط الأول: {e}", flush=True)
 
-    container_id = init_res["id"]
-    upload_uri = init_res["uri"]
-
+    # المحاولة 2: Tmpfiles
     with open(video_path, "rb") as f:
-        headers = {
-            "Authorization": f"OAuth {META_ACCESS_TOKEN}",
-            "offset": "0",
-            "file_size": str(file_size)
-        }
-        requests.post(upload_uri, headers=headers, data=f, timeout=180).raise_for_status()
+        r = requests.post(
+            "https://tmpfiles.org/api/v1/upload",
+            files={"file": f},
+            timeout=120
+        ).json()
+    if r.get("status") == "success":
+        return r["data"]["url"].replace("http://", "https://").replace("tmpfiles.org/", "tmpfiles.org/dl/")
 
-    for _ in range(20):
+    raise RuntimeError("تعذر رفع الفيديو لرابط مؤقت خاص بإنستجرام")
+
+
+def wait_and_publish_ig(ig_user_id, container_id):
+    for _ in range(35):
         status_res = requests.get(
             f"{GRAPH_API}/{container_id}",
-            params={"fields": "status_code", "access_token": META_ACCESS_TOKEN},
+            params={"fields": "status_code,status", "access_token": META_ACCESS_TOKEN},
             timeout=30
         ).json()
-        if status_res.get("status_code") == "FINISHED":
+        code = status_res.get("status_code")
+        if code == "FINISHED":
             break
-        time.sleep(5)
+        if code == "ERROR":
+            raise RuntimeError(f"رفض إنستجرام معالجة الفيديو: {status_res}")
+        time.sleep(6)
 
     pub_res = requests.post(
         f"{GRAPH_API}/{ig_user_id}/media_publish",
         data={"creation_id": container_id, "access_token": META_ACCESS_TOKEN},
         timeout=60
     ).json()
-    print(f"[Instagram Reels] تم النشر بنجاح: {pub_res}")
+    print(f"[Instagram Reels] تم النشر بنجاح: {pub_res}", flush=True)
+
+
+def upload_to_instagram_reels(video_path, title, ig_user_id):
+    caption = f"{title} 🍓🥭\n\n#حواديت #قصص_الفواكه #حدوتة #reels"
+
+    # الطريقة الأولى: الرفع عبر رابط مباشر لتخطي خطأ rupload 400
+    try:
+        public_url = get_public_video_url(video_path)
+        print(f"[Instagram] جاري إرسال الفيديو عبر الرابط: {public_url}", flush=True)
+        init_res = requests.post(
+            f"{GRAPH_API}/{ig_user_id}/media",
+            data={
+                "media_type": "REELS",
+                "video_url": public_url,
+                "caption": caption,
+                "access_token": META_ACCESS_TOKEN
+            },
+            timeout=30
+        ).json()
+        if "id" in init_res:
+            wait_and_publish_ig(ig_user_id, init_res["id"])
+            return
+    except Exception as e:
+        print(f"تنبيه الطريقة الأولى لإنستجرام، جاري التحويل للطريقة المباشرة: {e}", flush=True)
+
+    # الطريقة الثانية الاحتياطية: Resumable Upload بعد ضبط الصيغة القياسية
+    file_size = os.path.getsize(video_path)
+    init_res = requests.post(
+        f"{GRAPH_API}/{ig_user_id}/media",
+        data={
+            "media_type": "REELS",
+            "upload_type": "resumable",
+            "caption": caption,
+            "access_token": META_ACCESS_TOKEN
+        },
+        timeout=30
+    ).json()
+
+    if "id" not in init_res:
+        raise RuntimeError(f"فشل تهيئة إنستجرام: {init_res}")
+
+    with open(video_path, "rb") as f:
+        video_bytes = f.read()
+
+    headers = {
+        "Authorization": f"OAuth {META_ACCESS_TOKEN}",
+        "offset": "0",
+        "file_size": str(file_size),
+        "Content-Type": "application/octet-stream"
+    }
+    up_res = requests.post(init_res["uri"], headers=headers, data=video_bytes, timeout=180)
+    if not up_res.ok:
+        raise RuntimeError(f"خطأ رفع إنستجرام ({up_res.status_code}): {up_res.text}")
+
+    wait_and_publish_ig(ig_user_id, init_res["id"])
 
 
 def assemble_and_publish():
-    print("جاري كتابة القصة عبر Gemini...")
+    print("جاري تأليف حدوتة الفواكه عبر Gemini...", flush=True)
     story = generate_story()
-    print(f"عنوان القصة: {story['title']}")
+    print(f"عنوان الحدوتة: {story['title']}", flush=True)
 
     scene_videos = []
     for idx, scene in enumerate(story["scenes"]):
-        print(f"جاري تجهيز المشهد {idx + 1}...")
+        print(f"جاري تجهيز المشهد {idx + 1}...", flush=True)
         clip = create_scene_assets(idx, scene["narration"], scene["image_prompt"])
         scene_videos.append(clip)
 
@@ -280,30 +360,33 @@ def assemble_and_publish():
             f.write(f"file '{v}'\n")
 
     final_video = "final_short.mp4"
-    print("جاري دمج الفيديو النهائي...")
+    print("جاري دمج الفيديو النهائي بجودة عالية...", flush=True)
     subprocess.run([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-        "-i", "inputs.txt", "-c", "copy", final_video
+        "ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
+        "-i", "inputs.txt", "-vf", "scale=1080:1920,setsar=1,format=yuv420p",
+        "-r", "30", "-c:v", "libx264", "-preset", "fast", "-profile:v", "high",
+        "-level", "4.0", "-crf", "18", "-c:a", "aac", "-ar", "44100",
+        "-ac", "2", "-b:a", "128k", "-movflags", "+faststart", final_video
     ], check=True)
 
     for token in YT_REFRESH_TOKENS:
         try:
             upload_to_youtube(final_video, story["title"], token)
         except Exception as e:
-            print(f"[YouTube Error] {e}")
+            print(f"[YouTube Error] {e}", flush=True)
 
     if META_ACCESS_TOKEN:
         for page_id in FB_PAGE_IDS:
             try:
                 upload_to_facebook_reels(final_video, story["title"], page_id)
             except Exception as e:
-                print(f"[Facebook Error] {e}")
+                print(f"[Facebook Error] {e}", flush=True)
 
         for ig_id in IG_USER_IDS:
             try:
                 upload_to_instagram_reels(final_video, story["title"], ig_id)
             except Exception as e:
-                print(f"[Instagram Error] {e}")
+                print(f"[Instagram Error] {e}", flush=True)
 
 
 if __name__ == "__main__":
