@@ -4,6 +4,29 @@ on:
   schedule:
     - cron: '0 18 * * *'
   workflow_dispatch:
+    inputs:
+      custom_prompt:
+        description: 'اكتب وصف الفيديو بالتفصيل (القصة، الملابس، الحركات، الأصوات، الألوان) أو اتركه فارغاً للتوليد التلقائي'
+        required: false
+        default: ''
+        type: string
+      audio_style:
+        description: 'أسلوب الصوت في الفيديو'
+        required: true
+        default: 'sfx_only'
+        type: choice
+        options:
+          - sfx_only
+          - voice_and_sfx
+      scenes_count:
+        description: 'عدد مشاهد الفيديو'
+        required: true
+        default: '6'
+        type: choice
+        options:
+          - '5'
+          - '6'
+          - '8'
 
 jobs:
   build-and-publish:
@@ -36,5 +59,8 @@ jobs:
           FB_PAGE_IDS: ${{ secrets.FB_PAGE_IDS }}
           IG_USER_IDS: ${{ secrets.IG_USER_IDS }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          CUSTOM_PROMPT: ${{ inputs.custom_prompt }}
+          AUDIO_STYLE: ${{ inputs.audio_style }}
+          SCENES_COUNT: ${{ inputs.scenes_count }}
         run: |
           python main.py
