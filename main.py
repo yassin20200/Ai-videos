@@ -13,11 +13,21 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from gradio_client import Client, handle_file
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
+import arabic_reshaper
+from bidi.algorithm import get_display
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 
-# المفاتيح الخمسة مدمجة ومحمية (مفصولة عن البادئة "hf_" لمنع GitHub من إبطالها تلقائياً)
+# مدخلات واجهة المستخدم السحابية (GitHub Actions Web UI Inputs)
+CUSTOM_PROMPT = os.getenv("CUSTOM_PROMPT", "").strip()
+AUDIO_STYLE = os.getenv("AUDIO_STYLE", "sfx_only").strip() or "sfx_only"
+try:
+    SCENES_COUNT = int(os.getenv("SCENES_COUNT", "6").strip() or "6")
+except ValueError:
+    SCENES_COUNT = 6
+
+# المفاتيح الخمسة مدمجة ومحمية + أي مفاتيح في Secrets
 BUILTIN_HF_KEYS = [
     "hf_" + "xQFHygbLwqIRmUVPonhLDnyPEgWFKJUjDD",
     "hf_" + "oTFgbajxGfeVCdfwEXqfIQTSpmKFYHUDey",
@@ -26,7 +36,6 @@ BUILTIN_HF_KEYS = [
     "hf_" + "ZoaZszyOKKucYlXXIYrQjvWIkFbOuTPUja",
 ]
 
-# قراءة أي مفاتيح إضافية من HF_TOKEN في Secrets ودمجها بدون تكرار
 RAW_ENV_TOKENS = [t.strip() for t in os.getenv("HF_TOKEN", "").replace("\n", ",").replace(" ", ",").split(",") if t.strip()]
 HF_TOKENS = []
 for token_item in BUILTIN_HF_KEYS + RAW_ENV_TOKENS:
@@ -42,24 +51,28 @@ IG_USER_IDS = [i.strip() for i in os.getenv("IG_USER_IDS", "").split(",") if i.s
 META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "").strip()
 
 GRAPH_API = "https://graph.facebook.com/v21.0"
-
-# بذرة موحدة (Master Seed) للحفاظ على تناسق شكل الشخصيات والإضاءة في كل المشاهد
+FONT_PATH = "Cairo-Black.ttf"
 CHARACTER_MASTER_SEED = 777888
 
-# إزالة المتغير العام حتى نتحكم في تمرير كل حساب (Token) بشكل مستقل
 os.environ.pop("HF_TOKEN", None)
 
-# قائمة لتسجيل الحسابات التي استنفدت كوتة الفيديو (ZeroGPU) لعدم إضاعة الوقت في إعادة تجربتها
 EXHAUSTED_VIDEO_TOKENS = set()
+EXHAUSTED_IMAGE_TOKENS = set()
 
-# مؤثرات صوتية استوديو حقيقية ونظيفة
+# مكتبة مؤثرات صوتية شاملة تغطي كل أنواع الحركات والانفعالات في أي برومبت
 STUDIO_FOLEY_URLS = {
-    "warm_pop": "https://actions.google.com/sounds/v1/cartoon/pop.ogg",
+    "hug_warm": "https://actions.google.com/sounds/v1/foley/cloth_flapping.ogg",
+    "place_clothes": "https://actions.google.com/sounds/v1/foley/footsteps_on_wood.ogg",
     "gasp_shock": "https://actions.google.com/sounds/v1/cartoon/concussive_hit_guitar_boing.ogg",
-    "water_bubbles": "https://actions.google.com/sounds/v1/water/air_woosh_underwater.ogg",
     "sewing_machine": "https://actions.google.com/sounds/v1/office/typewriter_fast.ogg",
-    "magic_tada": "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg",
-    "funny_fail": "https://actions.google.com/sounds/v1/cartoon/slide_whistle_to_drum.ogg"
+    "water_scrub": "https://actions.google.com/sounds/v1/water/water_splashing.ogg",
+    "proud_chime": "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg",
+    "boy_horror": "https://actions.google.com/sounds/v1/cartoon/slide_whistle_to_drum.ogg",
+    "faint_thud": "https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg",
+    "pop": "https://actions.google.com/sounds/v1/cartoon/pop.ogg",
+    "boing": "https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg",
+    "whoosh": "https://actions.google.com/sounds/v1/foley/whoosh.ogg",
+    "cheer": "https://actions.google.com/sounds/v1/crowds/battle_crowd_celebrate_stutter.ogg"
 }
 
 BGM_URLS = [
@@ -138,90 +151,102 @@ class PinnedSpace:
         Path(dst).write_bytes(content)
 
 
-def get_clean_replica_storyboard():
-    """6 مشاهد سينمائية نظيفة ومحتشمة 100% تحاكي قصة الجدة والحفيد بوضوح بصري تام"""
-    boy_desc = (
-        "a cheerful 16-year-old 3D Pixar teenage boy with neat black hair and expressive brown eyes, "
-        "fully dressed in a cozy navy blue long-sleeve sweater and dark jeans"
-    )
-    grandma_desc = (
-        "a sweet short chubby 3D Pixar grandmother with round glasses, modest floral headscarf, "
-        "and a warm mustard-yellow knitted cardigan over a long apron"
+def ensure_arabic_font():
+    if os.path.exists(FONT_PATH) and os.path.getsize(FONT_PATH) > 10000:
+        return FONT_PATH
+    try:
+        url = "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Black.ttf"
+        r = requests.get(url, timeout=30)
+        if r.ok:
+            with open(FONT_PATH, "wb") as f:
+                f.write(r.content)
+            return FONT_PATH
+    except Exception:
+        pass
+    return "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+
+def generate_storyboard_from_user_prompt(user_prompt, audio_style, scenes_count):
+    """
+    تحويل البرومبت التفصيلي الذي يكتبه المستخدم (بالعربية أو الإنجليزية)
+    إلى خطة إخراجية كاملة (Storyboard) تلتزم حرفياً بكل حركة ولون وصوت وتفصيلة طلبها المستخدم!
+    """
+    available_sfx = list(STUDIO_FOLEY_URLS.keys())
+    silent_rule = (
+        'اجعل حقل "narration" فارغاً تماماً "" في جميع المشاهد لأن الفيديو صامت يعتمد على التمثيل البصري والمؤثرات الصوتية فقط، '
+        'واكتب دائماً في نهاية كل motion_prompt عبارة: "mouth closed, no talking, silent visual acting".'
+        if audio_style == "sfx_only"
+        else 'اكتب في حقل "narration" جملة قصيرة جداً بالعامية المصرية المشكّلة تشكيلاً صحيحاً (3 إلى 5 كلمات فقط لكل مشهد).'
     )
 
-    return {
-        "title": "لما تيتة تقرر تصلح جاكيت الموضة بتاعك! 😱😂",
-        "scenes": [
-            {
-                "duration": 2.5,
-                "sfx_type": "warm_pop",
-                "image_prompt": (
-                    f"Masterpiece 3D Pixar Disney animation movie still, {boy_desc}, wearing a trendy white denim jacket "
-                    f"with artistic colorful paint splatters over his sweater, warmly hugging {grandma_desc} "
-                    f"inside a bright cozy wooden living room, Disney studio volumetric lighting, 8k, vertical 9:16"
-                ),
-                "motion_prompt": "3D Pixar animation, the teenage boy and his cute grandmother hug warmly and smile happily, gentle camera movement"
-            },
-            {
-                "duration": 2.5,
-                "sfx_type": "gasp_shock",
-                "image_prompt": (
-                    f"Masterpiece 3D Pixar Disney animation movie still, close-up of {grandma_desc} holding up a folded white denim jacket "
-                    f"covered in colorful artistic paint splatters, looking at the jacket wide-eyed with mouth open in funny cartoon shock, "
-                    f"cozy wooden cabin background, Disney studio lighting, 8k, vertical 9:16"
-                ),
-                "motion_prompt": "3D Pixar animation, the grandmother looks at the paint-splattered jacket in funny dramatic shock, eyes wide open, shaking her head"
-            },
-            {
-                "duration": 2.5,
-                "sfx_type": "water_bubbles",
-                "image_prompt": (
-                    f"Masterpiece 3D Pixar Disney animation movie still, {grandma_desc} standing at a wooden table vigorously scrubbing "
-                    f"the white jacket inside a large basin filled with sparkling soapy foam and floating soap bubbles, "
-                    f"warm sunlit room, 8k octane render, vertical 9:16"
-                ),
-                "motion_prompt": "3D Pixar animation, the grandmother scrubs the jacket enthusiastically in the soapy basin as shiny soap bubbles float into the air"
-            },
-            {
-                "duration": 2.5,
-                "sfx_type": "sewing_machine",
-                "image_prompt": (
-                    f"Masterpiece 3D Pixar Disney animation movie still, close-up of {grandma_desc} smiling with intense focus while using "
-                    f"a vintage white sewing machine on a wooden desk to stitch a giant bright yellow smiling cartoon sun patch "
-                    f"and colorful flower patches onto the white jacket, warm lighting, 8k, vertical 9:16"
-                ),
-                "motion_prompt": "3D Pixar animation, the grandmother sews rapidly on the sewing machine as the needle moves up and down stitching the yellow smiling sun patch"
-            },
-            {
-                "duration": 2.5,
-                "sfx_type": "magic_tada",
-                "image_prompt": (
-                    f"Masterpiece 3D Pixar Disney animation movie still, {grandma_desc} beaming with pride and holding up the newly repaired white jacket "
-                    f"now covered in a giant goofy smiling yellow cartoon sun patch and colorful floral fabric patches, sparkling clean, vertical 9:16"
-                ),
-                "motion_prompt": "3D Pixar animation, the grandmother proudly holds up the patched jacket with a huge joyful smile, nodding happily"
-            },
-            {
-                "duration": 2.8,
-                "sfx_type": "funny_fail",
-                "image_prompt": (
-                    f"Masterpiece 3D Pixar Disney animation movie still, {boy_desc} now wearing the white jacket with the giant goofy smiling yellow cartoon sun patch "
-                    f"and pink flower patches on the sleeves, staring at himself in a mirror with his jaw dropped in hilarious cartoon disbelief "
-                    f"while his grandmother smiles proudly behind him, 8k, vertical 9:16"
-                ),
-                "motion_prompt": "3D Pixar animation, the teenage boy stares at his goofy sun-patched jacket with his jaw dropped in funny shock and puts his hands on his head"
-            }
-        ]
+    user_direction = (
+        f"نفّذ هذا البرومبت التفصيلي من المستخدم بحذافيره 100% دون تغيير أي تفصيلة في الملابس أو الألوان أو الحركات أو الأحداث:\n{user_prompt}"
+        if user_prompt
+        else (
+            "ابتكر قصة 3D Pixar كوميدية بصرية صامتة عالمية على غرار فيديوهات الـ Reels المليونية "
+            "(مثلاً: شاب يدخل على جدته الحنونة بتيشيرت أبيض عليه طبعة كف أزرق وبنطلون جينز ممزق موضة، "
+            "فتنصدم الجدة وتغسله في طبق غسيل وتخيط عليه شمساً صفراء مبتسمة عملاقة بالماكينة، وعندما يلبسه الشاب ينصدم ويغمى عليه على الأرضية الخشبية)."
+        )
+    )
+
+    prompt = f"""
+    أنت مخرج أفلام أنيميشن 3D Pixar Disney عالمي.
+    المطلوب تحويل الوصف التالي إلى {scenes_count} مشاهد متتالية دقيقة جداً:
+    {user_direction}
+
+    قواعد صارمة جداً لضمان أعلى جودة إنتاجية:
+    1. ثبات الشخصيات والألوان: ابدأ كل `image_prompt` بالإنجليزية بـ:
+       "Bright vibrant 3D Pixar Disney animation movie frame, warm sunny lighting, saturated cheerful colors, ultra-clean 8k render, vertical 9:16."
+       وكرر الوصف الدقيق للشخصيات (لون الشعر، العمر، عدم وجود نظارة أو وجودها، لون وشكل الملابس بالضبط) داخل `image_prompt` في كل مشهد!
+    2. {silent_rule}
+    3. اختر لكل مشهد `sfx_type` الأنسب لحركة المشهد من هذه القائمة فقط: {available_sfx}
+    4. اجعل `duration` لكل مشهد بين 2.0 و 2.5 ثانية.
+    5. حدد `climax_scene_index` (رقم المشهد الذي تتوقف فيه الموسيقى للحظة الصدمة الكوميدية، مثلاً المشهد قبل الأخير).
+
+    أخرج النتيجة بصيغة JSON فقط بهذا الهيكل:
+    {{
+      "title": "عنوان جذاب للفيديو",
+      "climax_scene_index": {max(scenes_count - 2, 1)},
+      "scenes": [
+        {{
+          "duration": 2.2,
+          "sfx_type": "hug_warm",
+          "speaker": "male",
+          "narration": "",
+          "image_prompt": "Bright vibrant 3D Pixar Disney animation movie frame...",
+          "motion_prompt": "3D Pixar animation, smooth expressive movement..., mouth closed, no talking"
+        }}
+      ]
+    }}
+    """
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"responseMimeType": "application/json"}
     }
+    for model in ["gemini-2.5-pro", "gemini-2.5-flash"]:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+            res = requests.post(url, json=payload, timeout=60).json()
+            if "candidates" in res:
+                print(f"🎬 تم تحويل البرومبت التفصيلي إلى خطة إخراجية عبر: {model}", flush=True)
+                text = res["candidates"][0]["content"]["parts"][0]["text"]
+                return json.loads(text)
+        except Exception as e:
+            print(f"تنبيه Gemini ({model}): {e}", flush=True)
+    raise RuntimeError("فشل الاتصال بـ Gemini API لتحويل البرومبت")
 
 
 def create_scene_audio(index, scene, out_audio_file):
-    duration = float(scene.get("duration", 2.5))
-    sfx_type = scene.get("sfx_type", "warm_pop")
+    duration = float(scene.get("duration", 2.2))
+    sfx_type = scene.get("sfx_type", "hug_warm")
+    narration = (scene.get("narration") or "").strip()
+    speaker = scene.get("speaker", "male")
 
     raw_ogg = f"raw_sfx_{index}.ogg"
-    sfx_url = STUDIO_FOLEY_URLS.get(sfx_type, STUDIO_FOLEY_URLS["warm_pop"])
+    sfx_wav = f"sfx_base_{index}.wav"
+    sfx_url = STUDIO_FOLEY_URLS.get(sfx_type, STUDIO_FOLEY_URLS["pop"])
 
+    sfx_ok = False
     try:
         r = requests.get(sfx_url, timeout=20)
         if r.ok and len(r.content) > 1000:
@@ -230,24 +255,46 @@ def create_scene_audio(index, scene, out_audio_file):
             subprocess.run([
                 "ffmpeg", "-y", "-loglevel", "error",
                 "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={duration}",
-                "-i", raw_ogg,
+                "-stream_loop", "1", "-i", raw_ogg,
                 "-filter_complex",
-                f"[1:a]atrim=0:{duration},afade=t=in:d=0.05,afade=t=out:st={max(duration - 0.4, 0.2)}:d=0.4,volume=0.80[s];"
+                f"[1:a]atrim=0:{duration},afade=t=in:d=0.04,afade=t=out:st={max(duration - 0.35, 0.2)}:d=0.35,volume=0.85[s];"
                 f"[0:a][s]amix=inputs=2:duration=first:dropout_transition=0[a]",
-                "-map", "[a]", "-t", str(duration), "-ar", "44100", "-ac", "2", out_audio_file
+                "-map", "[a]", "-t", str(duration), "-ar", "44100", "-ac", "2", sfx_wav
             ], check=True)
-            return
+            sfx_ok = True
     except Exception:
         pass
 
-    subprocess.run([
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={duration}",
-        "-t", str(duration), "-ar", "44100", "-ac", "2", out_audio_file
-    ], check=True)
+    if not sfx_ok:
+        subprocess.run([
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={duration}",
+            "-t", str(duration), "-ar", "44100", "-ac", "2", sfx_wav
+        ], check=True)
+
+    if narration and AUDIO_STYLE == "voice_and_sfx":
+        voice_mp3 = f"voice_{index}.mp3"
+        voice_name = "ar-EG-SalmaNeural" if speaker == "female" else "ar-EG-ShakirNeural"
+        try:
+            subprocess.run([
+                "edge-tts", "--voice", voice_name, "--rate=+8%",
+                "--text", narration, "--write-media", voice_mp3
+            ], check=True, timeout=25, stderr=subprocess.DEVNULL)
+            subprocess.run([
+                "ffmpeg", "-y", "-loglevel", "error",
+                "-i", sfx_wav, "-i", voice_mp3,
+                "-filter_complex",
+                "[1:a]adelay=180|180,volume=1.3[v];[0:a]volume=0.55[s];[s][v]amix=inputs=2:duration=longest:dropout_transition=0[a]",
+                "-map", "[a]", "-ar", "44100", "-ac", "2", out_audio_file
+            ], check=True)
+            return
+        except Exception:
+            pass
+
+    shutil.copyfile(sfx_wav, out_audio_file)
 
 
-def save_clean_hd_image(src_bytes_or_path, dst_file, is_bytes=False, crop_watermark=False):
+def save_vibrant_pixar_image(src_bytes_or_path, dst_file, is_bytes=False, crop_watermark=False):
     if is_bytes:
         with open("temp_img_raw", "wb") as f:
             f.write(src_bytes_or_path)
@@ -260,7 +307,10 @@ def save_clean_hd_image(src_bytes_or_path, dst_file, is_bytes=False, crop_waterm
         img = img.crop((0, 0, w, int(h * 0.95)))
 
     img = img.resize((1080, 1920), Image.Resampling.LANCZOS)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.5, percent=125, threshold=3))
+    img = ImageEnhance.Brightness(img).enhance(1.07)
+    img = ImageEnhance.Color(img).enhance(1.22)
+    img = ImageEnhance.Contrast(img).enhance(1.06)
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.5, percent=130, threshold=3))
     img.save(dst_file, "JPEG", quality=98)
 
 
@@ -283,7 +333,7 @@ def generate_image_with_nano_banana(index, image_prompt, img_file):
             parts.append({"inlineData": {"mimeType": "image/jpeg", "data": b64_ref}})
             parts.append({
                 "text": (
-                    "Keep the exact same 3D Pixar character designs, faces, and art style from this reference image. "
+                    "Keep the exact same 3D Pixar character designs, faces, and bright sunny art style from this reference image. "
                     f"Generate a new vertical 9:16 scene: {image_prompt}"
                 )
             })
@@ -308,38 +358,26 @@ def generate_image_with_nano_banana(index, image_prompt, img_file):
                             if inline and inline.get("data"):
                                 raw_bytes = base64.b64decode(inline["data"])
                                 if len(raw_bytes) > 10000:
-                                    save_clean_hd_image(raw_bytes, img_file, is_bytes=True, crop_watermark=False)
+                                    save_vibrant_pixar_image(raw_bytes, img_file, is_bytes=True, crop_watermark=False)
                                     print(f"🍌 تم تصميم صورة المشهد {index + 1} عبر Google Nano Banana ({model_name})!", flush=True)
                                     return True
             except Exception:
                 pass
 
-    try:
-        imagen_url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key={GEMINI_API_KEY}"
-        r = requests.post(
-            imagen_url,
-            json={"instances": [{"prompt": image_prompt}], "parameters": {"sampleCount": 1, "aspectRatio": "9:16"}},
-            timeout=45
-        )
-        if r.status_code == 200:
-            preds = r.json().get("predictions", [])
-            if preds and "bytesBase64Encoded" in preds[0]:
-                raw_bytes = base64.b64decode(preds[0]["bytesBase64Encoded"])
-                save_clean_hd_image(raw_bytes, img_file, is_bytes=True, crop_watermark=False)
-                print(f"🎨 تم تصميم صورة المشهد {index + 1} عبر Google Imagen 3!", flush=True)
-                return True
-    except Exception:
-        pass
-
     return False
 
 
+def is_quota_error(err_text):
+    t = str(err_text).lower()
+    return "zerogpu" in t or "exceeded" in t or "quota" in t or "runs limit" in t
+
+
 def download_scene_image(index, image_prompt, img_file):
-    # 1. Google Nano Banana / Imagen 3
+    # 1. Google Nano Banana
     if generate_image_with_nano_banana(index, image_prompt, img_file):
         return
 
-    # 2. Hugging Face Router FLUX.1-schnell (باستخدام تدوير مفاتيح HF_TOKENS)
+    # 2. Hugging Face Router FLUX.1-schnell
     for t_idx, tok in enumerate(HF_TOKENS):
         try:
             hf_url = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
@@ -350,38 +388,26 @@ def download_scene_image(index, image_prompt, img_file):
             }
             res = requests.post(hf_url, headers=headers, json={"inputs": image_prompt}, timeout=60)
             if res.status_code == 200 and len(res.content) > 15000:
-                save_clean_hd_image(res.content, img_file, is_bytes=True, crop_watermark=False)
+                save_vibrant_pixar_image(res.content, img_file, is_bytes=True, crop_watermark=False)
                 print(f"🎨 تم تصميم صورة المشهد {index + 1} عبر HF Router FLUX.1 (مفتاح #{t_idx + 1})!", flush=True)
                 return
         except Exception:
             pass
 
-    # 3. Pollinations Flux HD مع بذرة موحدة (Master Seed) لتناسق الشخصيات
-    encoded_prompt = urllib.parse.quote(image_prompt, safe='')
-    for attempt in range(4):
-        if index > 0 or attempt > 0:
-            time.sleep(6 + attempt * 3)
-        model = "flux" if attempt < 3 else "turbo"
-        try:
-            img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1792&model={model}&nologo=true&seed={CHARACTER_MASTER_SEED + attempt}"
-            res = requests.get(img_url, headers={"User-Agent": f"Mozilla/5.0 (PixarPipeline/{index}-{attempt})"}, timeout=90)
-            if res.status_code == 200 and len(res.content) > 15000:
-                save_clean_hd_image(res.content, img_file, is_bytes=True, crop_watermark=True)
-                print(f"🎨 تم تصميم صورة المشهد {index + 1} عبر محرك Flux HD (بذرة موحدة)!", flush=True)
-                return
-        except Exception:
-            pass
-
-    # 4. مساحة FLUX.1-schnell مع بذرة موحدة
-    for tok in ([None] + HF_TOKENS):
+    # 3. مساحة Hugging Face الرسمية black-forest-labs/FLUX.1-schnell بدقة 1024x1792
+    image_token_pool = list(reversed(HF_TOKENS)) + [None]
+    for tok in image_token_pool:
+        tok_id = "IMG_IP" if tok is None else f"IMG_TOK_{tok[:10]}"
+        if tok_id in EXHAUSTED_IMAGE_TOKENS:
+            continue
         try:
             client = Client("black-forest-labs/FLUX.1-schnell", token=tok, verbose=False)
             res = client.predict(
                 prompt=image_prompt,
                 seed=CHARACTER_MASTER_SEED,
                 randomize_seed=False,
-                width=768,
-                height=1344,
+                width=1024,
+                height=1792,
                 num_inference_steps=4,
                 api_name="/infer"
             )
@@ -389,13 +415,29 @@ def download_scene_image(index, image_prompt, img_file):
             if isinstance(img_path, dict) and "path" in img_path:
                 img_path = img_path["path"]
             if isinstance(img_path, str) and os.path.exists(img_path):
-                save_clean_hd_image(img_path, img_file, is_bytes=False, crop_watermark=False)
-                print(f"🎨 تم تصميم صورة المشهد {index + 1} عبر مساحة FLUX.1!", flush=True)
+                save_vibrant_pixar_image(img_path, img_file, is_bytes=False, crop_watermark=False)
+                print(f"✨ تم تصميم صورة المشهد {index + 1} عبر مساحة FLUX.1 الرسمية بدقة 1024x1792!", flush=True)
+                return
+        except Exception as e:
+            if is_quota_error(e):
+                EXHAUSTED_IMAGE_TOKENS.add(tok_id)
+                continue
+
+    # 4. Pollinations Flux HD كبديل أخير
+    encoded_prompt = urllib.parse.quote(image_prompt, safe='')
+    for attempt in range(3):
+        time.sleep(5 + attempt * 3)
+        try:
+            img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1792&model=flux&nologo=true&seed={CHARACTER_MASTER_SEED + attempt}"
+            res = requests.get(img_url, headers={"User-Agent": f"Mozilla/5.0 (PixarStudio/{index}-{attempt})"}, timeout=90)
+            if res.status_code == 200 and len(res.content) > 15000:
+                save_vibrant_pixar_image(res.content, img_file, is_bytes=True, crop_watermark=True)
+                print(f"🎨 تم تصميم صورة المشهد {index + 1} عبر محرك Flux الاحتياطي!", flush=True)
                 return
         except Exception:
             pass
 
-    raise RuntimeError(f"تعذر توليد صورة جديدة للمشهد {index + 1} من جميع المحركات")
+    raise RuntimeError(f"تعذر توليد صورة للمشهد {index + 1}")
 
 
 def extract_video_path(result):
@@ -416,14 +458,13 @@ def extract_video_path(result):
     return None
 
 
-def is_quota_error(err_text):
-    t = str(err_text).lower()
-    return "zerogpu" in t or "exceeded" in t or "quota" in t or "runs limit" in t
-
-
 def animate_image_with_ai(index, img_file, motion_prompt, duration, out_raw_video):
-    full_motion = f"{motion_prompt}, 3D Pixar animation, family friendly, smooth expressive movement, lively action"
-    neg_prompt = "low quality, worst quality, static, frozen, blurry, deformed, ugly, text, watermark, nsfw"
+    silent_clause = ", silent visual acting, no talking, keep mouth closed" if AUDIO_STYLE == "sfx_only" else ""
+    full_motion = f"{motion_prompt}, bright vibrant 3D Pixar animation, smooth expressive movement{silent_clause}"
+    neg_prompt = (
+        "talking, speaking, moving lips, lip sync, chatter, babbling, yapping, "
+        "dark lighting, dull colors, low quality, worst quality, static, blurry, deformed, ugly, text, watermark, nsfw"
+    )
 
     all_pool = [None] + HF_TOKENS
 
@@ -442,11 +483,11 @@ def animate_image_with_ai(index, img_file, motion_prompt, duration, out_raw_vide
             res = client.predict(
                 input_image=handle_file(img_file),
                 prompt=full_motion,
-                steps=4,
+                steps=6,
                 negative_prompt=neg_prompt,
                 duration_seconds=min(duration, 2.5),
-                guidance_scale=1.0,
-                guidance_scale_2=1.0,
+                guidance_scale=1.2,
+                guidance_scale_2=1.2,
                 seed=CHARACTER_MASTER_SEED + index,
                 randomize_seed=False,
                 api_name="/generate_video"
@@ -464,7 +505,7 @@ def animate_image_with_ai(index, img_file, motion_prompt, duration, out_raw_vide
             try:
                 ps = PinnedSpace(wan_space, token=tok)
                 up_img = ps.upload(img_file)
-                out = ps.call("/generate_video", [up_img, full_motion, 4, neg_prompt, min(duration, 2.5), 1.0, 1.0, CHARACTER_MASTER_SEED + index, False])
+                out = ps.call("/generate_video", [up_img, full_motion, 6, neg_prompt, min(duration, 2.5), 1.2, 1.2, CHARACTER_MASTER_SEED + index, False])
                 ps.download_video(out, out_raw_video)
                 print(f"🎉 تم تحريك المشهد {index + 1} بنجاح عبر {wan_space} Pinned ({quota_label})!", flush=True)
                 return True
@@ -487,7 +528,7 @@ def animate_image_with_ai(index, img_file, motion_prompt, duration, out_raw_vide
                 height_ui=704,
                 width_ui=512,
                 mode="image-to-video",
-                duration_ui=2.5,
+                duration_ui=2.2,
                 ui_frames_to_use=9,
                 seed_ui=CHARACTER_MASTER_SEED + index,
                 randomize_seed=False,
@@ -505,36 +546,60 @@ def animate_image_with_ai(index, img_file, motion_prompt, duration, out_raw_vide
                 EXHAUSTED_VIDEO_TOKENS.add(tok_key)
                 continue
 
-        # 3. AnimateLCM-SVD
-        try:
-            svd_space = "wangfuyun/AnimateLCM-SVD"
-            print(f"جاري تحريك المشهد {index + 1} عبر ({svd_space} - {quota_label})...", flush=True)
-            ps = PinnedSpace(svd_space, token=tok)
-            up_img = ps.upload(img_file)
-            out = ps.call("video", [up_img, CHARACTER_MASTER_SEED + index, False, 85, 8, 1.2, 1, 576, 1024, 4])
-            ps.download_video(out, out_raw_video)
-            print(f"🎉 تم تحريك المشهد {index + 1} بنجاح عبر {svd_space} ({quota_label})!", flush=True)
-            return True
-        except Exception as e:
-            if is_quota_error(e):
-                EXHAUSTED_VIDEO_TOKENS.add(tok_key)
-                continue
-
     return False
 
 
+def render_subtitle_phrase_png(phrase_text, png_path):
+    font_file = ensure_arabic_font()
+    img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype(font_file, 62, layout_engine=ImageFont.Layout.BASIC)
+        display_text = get_display(arabic_reshaper.reshape(phrase_text))
+    except Exception:
+        font = ImageFont.truetype(font_file, 62)
+        display_text = phrase_text
+
+    bbox = draw.textbbox((0, 0), display_text, font=font)
+    w = bbox[2] - bbox[0]
+    h = bbox[3] - bbox[1]
+    x_pos = (1080 - w) // 2
+    y_pos = 1520
+
+    pad_x, pad_y = 32, 16
+    draw.rounded_rectangle(
+        [(x_pos - pad_x, y_pos - pad_y), (x_pos + w + pad_x, y_pos + h + pad_y + 10)],
+        radius=35,
+        fill=(0, 0, 0, 145)
+    )
+    for dx in (-4, -2, 0, 2, 4):
+        for dy in (-4, -2, 0, 2, 4):
+            if dx != 0 or dy != 0:
+                draw.text((x_pos + dx, y_pos + dy), display_text, font=font, fill=(0, 0, 0, 255))
+    draw.text((x_pos, y_pos), display_text, font=font, fill=(255, 240, 100, 255))
+    img.save(png_path, "PNG")
+
+
 def create_scene_assets(index, scene):
-    duration = float(scene.get("duration", 2.5))
+    duration = float(scene.get("duration", 2.2))
     image_prompt = scene["image_prompt"]
     motion_prompt = scene["motion_prompt"]
+    narration = (scene.get("narration") or "").strip()
 
     audio_file = f"scene_{index}.wav"
     create_scene_audio(index, scene, audio_file)
+
+    probe = subprocess.run([
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", audio_file
+    ], capture_output=True, text=True, check=True)
+    duration = max(float(probe.stdout.strip()), duration)
 
     img_file = f"scene_{index}.jpg"
     download_scene_image(index, image_prompt, img_file)
 
     raw_ai_video = f"raw_ai_{index}.mp4"
+    base_video = f"base_{index}.mp4"
     video_file = f"scene_{index}.mp4"
     fps = 30
     total_frames = int(duration * fps) + 10
@@ -542,36 +607,71 @@ def create_scene_assets(index, scene):
     ai_animated = animate_image_with_ai(index, img_file, motion_prompt, duration, raw_ai_video)
 
     if ai_animated and os.path.exists(raw_ai_video):
-        # فلتر CAS (Contrast Adaptive Sharpening) لإبراز تفاصيل 3D Pixar بدقة 1080x1920
         subprocess.run([
             "ffmpeg", "-y", "-loglevel", "error",
-            "-stream_loop", "-1", "-i", raw_ai_video, "-i", audio_file,
-            "-map", "0:v", "-map", "1:a",
-            "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,cas=0.65,unsharp=3:3:0.5:3:3:0.0,setsar=1,format=yuv420p",
+            "-stream_loop", "-1", "-i", raw_ai_video,
+            "-vf", (
+                "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+                "eq=saturation=1.14:brightness=0.03:contrast=1.05,"
+                "cas=0.70,unsharp=3:3:0.6:3:3:0.0,setsar=1,format=yuv420p"
+            ),
             "-t", str(duration), "-r", str(fps),
-            "-c:v", "libx264", "-preset", "fast", "-crf", "16",
-            "-c:a", "aac", "-ar", "44100", "-ac", "2",
-            "-shortest", video_file
+            "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
         ], check=True)
     else:
-        z_expr = "min(zoom+0.0028,1.24)" if index % 2 == 0 else "if(eq(on,1),1.24,max(zoom-0.0028,1.0))"
+        z_expr = "min(zoom+0.0030,1.25)" if index % 2 == 0 else "if(eq(on,1),1.25,max(zoom-0.0030,1.0))"
         zoom_filter = (
             f"scale=1440:2560:force_original_aspect_ratio=increase,crop=1440:2560,"
-            f"eq=saturation=1.10:contrast=1.04,"
+            f"eq=saturation=1.14:brightness=0.03:contrast=1.05,"
             f"zoompan=z='{z_expr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d={total_frames}:s=1080x1920:fps={fps},cas=0.5,setsar=1,format=yuv420p"
+            f"d={total_frames}:s=1080x1920:fps={fps},cas=0.6,setsar=1,format=yuv420p"
         )
         subprocess.run([
             "ffmpeg", "-y", "-loglevel", "error",
-            "-loop", "1", "-i", img_file, "-i", audio_file,
-            "-map", "0:v", "-map", "1:a",
+            "-loop", "1", "-i", img_file,
             "-vf", zoom_filter, "-t", str(duration), "-r", str(fps),
-            "-c:v", "libx264", "-preset", "fast", "-crf", "16",
-            "-c:a", "aac", "-ar", "44100", "-ac", "2",
-            "-shortest", video_file
+            "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
         ], check=True)
 
-    return video_file
+    if not narration or AUDIO_STYLE == "sfx_only":
+        subprocess.run([
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-i", base_video, "-i", audio_file,
+            "-map", "0:v", "-map", "1:a",
+            "-c:v", "copy", "-c:a", "aac", "-ar", "44100", "-ac", "2",
+            "-shortest", video_file
+        ], check=True)
+        return video_file, duration
+
+    clean_words = re.sub(r'[\u0617-\u061A\u064B-\u0652"\'«»*]', '', narration).split()
+    phrases = [" ".join(clean_words[i:i + 4]) for i in range(0, len(clean_words), 4)] or [narration]
+    step_dur = duration / max(len(phrases), 1)
+
+    inputs_cmd = ["-i", base_video, "-i", audio_file]
+    filter_parts = []
+    last_stream = "[0:v]"
+    for p_idx, phrase in enumerate(phrases):
+        png_file = f"sub_{index}_{p_idx}.png"
+        render_subtitle_phrase_png(phrase, png_file)
+        inputs_cmd.extend(["-loop", "1", "-i", png_file])
+        start_t = round(p_idx * step_dur, 2)
+        end_t = round((p_idx + 1) * step_dur, 2)
+        next_stream = f"[v{p_idx}]"
+        inp_idx = p_idx + 2
+        filter_parts.append(f"{last_stream}[{inp_idx}:v]overlay=0:0:enable='between(t,{start_t},{end_t})'{next_stream}")
+        last_stream = next_stream
+
+    filter_parts.append(f"{last_stream}format=yuv420p[vout]")
+    subprocess.run([
+        "ffmpeg", "-y", "-loglevel", "error",
+        *inputs_cmd,
+        "-filter_complex", ";".join(filter_parts),
+        "-map", "[vout]", "-map", "1:a",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "16",
+        "-t", str(duration), "-c:a", "aac", "-ar", "44100", "-ac", "2",
+        "-shortest", video_file
+    ], check=True)
+    return video_file, duration
 
 
 def download_real_bgm(bgm_path):
@@ -745,15 +845,22 @@ def upload_to_instagram_reels(video_path, title, ig_user_id):
 
 
 def assemble_and_publish():
-    print(f"إجمالي مفاتيح Hugging Face الجاهزة للتدوير التلقائي: {len(HF_TOKENS)} مفاتيح (+ IP السيرفر المجاني)", flush=True)
-    story = get_clean_replica_storyboard()
+    print(f"إجمالي مفاتيح Hugging Face الجاهزة: {len(HF_TOKENS)} مفاتيح (+ IP السيرفر المجاني)", flush=True)
+    if CUSTOM_PROMPT:
+        print(f"📝 تم استلام برومبت مخصص من الواجهة: {CUSTOM_PROMPT[:120]}...", flush=True)
+    else:
+        print("🤖 وضع التأليف التلقائي الذكي (لم يتم إدخال برومبت مخصص)", flush=True)
+
+    story = generate_storyboard_from_user_prompt(CUSTOM_PROMPT, AUDIO_STYLE, SCENES_COUNT)
     print(f"عنوان الفيديو: {story['title']}", flush=True)
 
     scene_videos = []
+    scene_durations = []
     for idx, scene in enumerate(story["scenes"]):
         print(f"--- جاري إنتاج وتحريك اللقطة {idx + 1} من {len(story['scenes'])} ---", flush=True)
-        clip = create_scene_assets(idx, scene)
+        clip, dur = create_scene_assets(idx, scene)
         scene_videos.append(clip)
+        scene_durations.append(dur)
 
     with open("inputs.txt", "w") as f:
         for v in scene_videos:
@@ -768,6 +875,12 @@ def assemble_and_publish():
         "-i", "inputs.txt", "-c", "copy", merged_video
     ], check=True)
 
+    # حساب توقيت مشهد الذروة (الصدمة) لإيقاف الموسيقى فيه تلقائياً
+    climax_idx = int(story.get("climax_scene_index", max(len(scene_durations) - 2, 1)))
+    climax_idx = min(max(climax_idx, 1), len(scene_durations) - 1)
+    pause_start = round(sum(scene_durations[:climax_idx]), 2)
+    pause_end = round(pause_start + scene_durations[climax_idx], 2)
+
     bgm_file = "bgm_track.mp3"
     if download_real_bgm(bgm_file):
         subprocess.run([
@@ -775,8 +888,8 @@ def assemble_and_publish():
             "-i", merged_video,
             "-stream_loop", "-1", "-i", bgm_file,
             "-filter_complex",
-            "[1:a]volume='if(gt(t,12.5),0.0,0.22)':eval=frame[bg];"
-            "[0:a]volume=1.20[fg];[fg][bg]amix=inputs=2:duration=first:dropout_transition=0[a]",
+            f"[1:a]volume='if(between(t,{pause_start},{pause_end}),0.0,0.22)':eval=frame[bg];"
+            f"[0:a]volume=1.25[fg];[fg][bg]amix=inputs=2:duration=first:dropout_transition=0[a]",
             "-map", "0:v", "-map", "[a]",
             "-vf", "scale=1080:1920,setsar=1,format=yuv420p",
             "-r", "30", "-c:v", "libx264", "-preset", "fast", "-profile:v", "high",
