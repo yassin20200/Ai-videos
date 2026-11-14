@@ -24,7 +24,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg libfreetype6-dev libfribidi-dev libharfbuzz-dev libraqm-dev fonts-hosny-amiri
           pip install --upgrade pip
-          pip install requests google-api-python-client google-auth google-auth-oauthlib edge-tts gradio_client huggingface_hub pillow arabic-reshaper python-bidi
+          pip install requests "httpx[http2]" google-api-python-client google-auth google-auth-oauthlib edge-tts gradio_client huggingface_hub pillow arabic-reshaper python-bidi
 
       - name: Generate and Publish Video
         env:
