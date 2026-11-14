@@ -23,9 +23,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 CUSTOM_PROMPT = os.getenv("CUSTOM_PROMPT", "").strip()
 AUDIO_STYLE = os.getenv("AUDIO_STYLE", "sfx_only").strip() or "sfx_only"
 try:
-    SCENES_COUNT = int(os.getenv("SCENES_COUNT", "6").strip() or "6")
+    SCENES_COUNT = int(os.getenv("SCENES_COUNT", "8").strip() or "8")
 except ValueError:
-    SCENES_COUNT = 6
+    SCENES_COUNT = 8
 
 # المفاتيح الخمسة مدمجة ومحمية + أي مفاتيح في Secrets
 BUILTIN_HF_KEYS = [
@@ -166,74 +166,109 @@ def ensure_arabic_font():
     return "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
+def repair_and_parse_json(raw_text):
+    """تنظيف وإصلاح أي نص JSON قادم من Gemini لضمان عدم حدوث خطأ فواصل أو علامات تنصيص"""
+    cleaned = raw_text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        # إزالة أي فواصل زائدة قبل الأقواس المغلقة ] أو }
+        fixed = re.sub(r",\s*([\]}])", r"\1", cleaned)
+        return json.loads(fixed)
+
+
 def generate_storyboard_from_user_prompt(user_prompt, audio_style, scenes_count):
     """
-    تحويل البرومبت التفصيلي الذي يكتبه المستخدم (بالعربية أو الإنجليزية)
-    إلى خطة إخراجية كاملة (Storyboard) تلتزم حرفياً بكل حركة ولون وصوت وتفصيلة طلبها المستخدم!
+    تحويل البرومبت التفصيلي الذي يكتبه المستخدم إلى خطة إخراجية كاملة (Storyboard)
+    باستخدام نظام Structured Outputs (responseSchema) الذي يجبر Gemini على إخراج JSON سليم 100%.
     """
     available_sfx = list(STUDIO_FOLEY_URLS.keys())
     silent_rule = (
-        'اجعل حقل "narration" فارغاً تماماً "" في جميع المشاهد لأن الفيديو صامت يعتمد على التمثيل البصري والمؤثرات الصوتية فقط، '
-        'واكتب دائماً في نهاية كل motion_prompt عبارة: "mouth closed, no talking, silent visual acting".'
+        'Set "narration" to "" (empty string) in all scenes because this is a silent visual comedy video, '
+        'and always end every motion_prompt with: "mouth closed, no talking, silent visual acting".'
         if audio_style == "sfx_only"
-        else 'اكتب في حقل "narration" جملة قصيرة جداً بالعامية المصرية المشكّلة تشكيلاً صحيحاً (3 إلى 5 كلمات فقط لكل مشهد).'
+        else 'Write a very short Egyptian Arabic sentence (3 to 5 words) in "narration" for each scene.'
     )
 
     user_direction = (
-        f"نفّذ هذا البرومبت التفصيلي من المستخدم بحذافيره 100% دون تغيير أي تفصيلة في الملابس أو الألوان أو الحركات أو الأحداث:\n{user_prompt}"
+        f"Execute this exact detailed user prompt faithfully with 100% of its character details, clothes, colors, actions, and SFX:\n{user_prompt}"
         if user_prompt
         else (
-            "ابتكر قصة 3D Pixar كوميدية بصرية صامتة عالمية على غرار فيديوهات الـ Reels المليونية "
-            "(مثلاً: شاب يدخل على جدته الحنونة بتيشيرت أبيض عليه طبعة كف أزرق وبنطلون جينز ممزق موضة، "
-            "فتنصدم الجدة وتغسله في طبق غسيل وتخيط عليه شمساً صفراء مبتسمة عملاقة بالماكينة، وعندما يلبسه الشاب ينصدم ويغمى عليه على الأرضية الخشبية)."
+            "Create a viral 3D Pixar silent visual comedy storyboard: a spiky-haired boy (like Hiro Hamada, no glasses) "
+            "visits his cute plump 70-year-old grandmother wearing a trendy white t-shirt with a blue paint handprint and ripped blue jeans. "
+            "Grandma gasps in shock, scrubs the shirt in a soapy basin, stitches a giant smiling yellow cartoon sun patch onto the shirt "
+            "and checkered patches onto the jeans, proudly hands it to him, he stares in horror (music stops), and faints on the wooden floor."
         )
     )
 
     prompt = f"""
-    أنت مخرج أفلام أنيميشن 3D Pixar Disney عالمي.
-    المطلوب تحويل الوصف التالي إلى {scenes_count} مشاهد متتالية دقيقة جداً:
+    You are a world-class 3D Pixar Disney animation director.
+    Convert the following request into exactly {scenes_count} sequential scenes:
     {user_direction}
 
-    قواعد صارمة جداً لضمان أعلى جودة إنتاجية:
-    1. ثبات الشخصيات والألوان: ابدأ كل `image_prompt` بالإنجليزية بـ:
-       "Bright vibrant 3D Pixar Disney animation movie frame, warm sunny lighting, saturated cheerful colors, ultra-clean 8k render, vertical 9:16."
-       وكرر الوصف الدقيق للشخصيات (لون الشعر، العمر، عدم وجود نظارة أو وجودها، لون وشكل الملابس بالضبط) داخل `image_prompt` في كل مشهد!
+    Strict Production Rules:
+    1. Character & Lighting Consistency: Start EVERY `image_prompt` with:
+       "Bright vibrant 3D Pixar Disney animation movie frame, warm sunny golden-hour lighting, saturated cheerful colors, ultra-clean 8k render, vertical 9:16."
+       And repeat the full physical description of the characters and their exact outfit in EVERY scene's `image_prompt` (do NOT use double quotes inside strings).
     2. {silent_rule}
-    3. اختر لكل مشهد `sfx_type` الأنسب لحركة المشهد من هذه القائمة فقط: {available_sfx}
-    4. اجعل `duration` لكل مشهد بين 2.0 و 2.5 ثانية.
-    5. حدد `climax_scene_index` (رقم المشهد الذي تتوقف فيه الموسيقى للحظة الصدمة الكوميدية، مثلاً المشهد قبل الأخير).
-
-    أخرج النتيجة بصيغة JSON فقط بهذا الهيكل:
-    {{
-      "title": "عنوان جذاب للفيديو",
-      "climax_scene_index": {max(scenes_count - 2, 1)},
-      "scenes": [
-        {{
-          "duration": 2.2,
-          "sfx_type": "hug_warm",
-          "speaker": "male",
-          "narration": "",
-          "image_prompt": "Bright vibrant 3D Pixar Disney animation movie frame...",
-          "motion_prompt": "3D Pixar animation, smooth expressive movement..., mouth closed, no talking"
-        }}
-      ]
-    }}
+    3. Choose `sfx_type` for each scene strictly from this list: {available_sfx}
+    4. Set `duration` between 2.0 and 2.4 seconds per scene.
+    5. Set `climax_scene_index` to the 0-based index of the shock/climax scene where background music should pause (e.g. {max(scenes_count - 2, 1)}).
     """
+
+    response_schema = {
+        "type": "OBJECT",
+        "properties": {
+            "title": {"type": "STRING"},
+            "climax_scene_index": {"type": "INTEGER"},
+            "scenes": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "duration": {"type": "NUMBER"},
+                        "sfx_type": {"type": "STRING"},
+                        "speaker": {"type": "STRING"},
+                        "narration": {"type": "STRING"},
+                        "image_prompt": {"type": "STRING"},
+                        "motion_prompt": {"type": "STRING"}
+                    },
+                    "required": ["duration", "sfx_type", "speaker", "narration", "image_prompt", "motion_prompt"]
+                }
+            }
+        },
+        "required": ["title", "climax_scene_index", "scenes"]
+    }
+
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"responseMimeType": "application/json"}
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "responseSchema": response_schema,
+            "maxOutputTokens": 8192,
+            "temperature": 0.35
+        }
     }
-    for model in ["gemini-2.5-pro", "gemini-2.5-flash"]:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
-            res = requests.post(url, json=payload, timeout=60).json()
-            if "candidates" in res:
-                print(f"🎬 تم تحويل البرومبت التفصيلي إلى خطة إخراجية عبر: {model}", flush=True)
-                text = res["candidates"][0]["content"]["parts"][0]["text"]
-                return json.loads(text)
-        except Exception as e:
-            print(f"تنبيه Gemini ({model}): {e}", flush=True)
-    raise RuntimeError("فشل الاتصال بـ Gemini API لتحويل البرومبت")
+
+    for model in ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]:
+        for attempt in range(2):
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+                res = requests.post(url, json=payload, timeout=75).json()
+                if "candidates" in res:
+                    text = res["candidates"][0]["content"]["parts"][0]["text"]
+                    parsed = repair_and_parse_json(text)
+                    if parsed and "scenes" in parsed and len(parsed["scenes"]) > 0:
+                        print(f"🎬 تم تحويل البرومبت التفصيلي إلى خطة إخراجية ({len(parsed['scenes'])} مشاهد) عبر: {model}", flush=True)
+                        return parsed
+            except Exception as e:
+                print(f"تنبيه Gemini ({model} - محاولة {attempt + 1}): {e}", flush=True)
+                time.sleep(3)
+
+    raise RuntimeError("فشل الاتصال بـ Gemini API لتحويل البرومبت بعد عدة محاولات")
 
 
 def create_scene_audio(index, scene, out_audio_file):
@@ -875,7 +910,6 @@ def assemble_and_publish():
         "-i", "inputs.txt", "-c", "copy", merged_video
     ], check=True)
 
-    # حساب توقيت مشهد الذروة (الصدمة) لإيقاف الموسيقى فيه تلقائياً
     climax_idx = int(story.get("climax_scene_index", max(len(scene_durations) - 2, 1)))
     climax_idx = min(max(climax_idx, 1), len(scene_durations) - 1)
     pause_start = round(sum(scene_durations[:climax_idx]), 2)
