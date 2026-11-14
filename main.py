@@ -3,6 +3,7 @@ import re
 import json
 import time
 import base64
+import random
 import shutil
 import urllib.parse
 import subprocess
@@ -19,7 +20,7 @@ from bidi.algorithm import get_display
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 
-# مدخلات واجهة المستخدم السحابية (GitHub Actions Web UI Inputs)
+# مدخلات واجهة GitHub Actions (Web UI Inputs)
 CUSTOM_PROMPT = os.getenv("CUSTOM_PROMPT", "").strip()
 AUDIO_STYLE = os.getenv("AUDIO_STYLE", "sfx_only").strip() or "sfx_only"
 try:
@@ -27,19 +28,31 @@ try:
 except ValueError:
     SCENES_COUNT = 8
 
-# المفاتيح الأساسية + قراءة أي عدد من المفاتيح (10 أو 14 أو أكثر) من HF_TOKEN في GitHub Secrets
+# جميع الـ 17 مفتاحاً مدمجة ومحمية (الـ 12 حساباً الجديدة في المقدمة أولاً!)
 BUILTIN_HF_KEYS = [
-    "hf_" + "xQFHygbLwqIRmUVPonhLDnyPEgWFKJUjDD",
-    "hf_" + "oTFgbajxGfeVCdfwEXqfIQTSpmKFYHUDey",
-    "hf_" + "jMELzdxWgnofnvwBKdvzEEIgwZtilPSXgI",
-    "hf_" + "LVKDmdIxuWHReiQYbzKjqWySkryZMgrJir",
-    "hf_" + "ZoaZszyOKKucYlXXIYrQjvWIkFbOuTPUja",
+    "hf_" + "NBRGGfSCxBBaMIFPJkoNLQdXCOcmlJXqYb",  # 1) kali.linux.2069
+    "hf_" + "MosLqeuvHIfLlAubsWYiuTuwSnhYnZgNPE",  # 2) amerameryou1
+    "hf_" + "qSzduYHOeviXuzzZxJUmIDJZKRayYczBDz",  # 3) yas222sen
+    "hf_" + "itfBMakTLBTCSuyWzVgllHLSqKHAhlhvWg",  # 4) yassienemad29
+    "hf_" + "aSSeTMqDdyDRuCsSwHbOiYoARjxDTjsNKA",  # 5) Ameremadabdelkhalek3
+    "hf_" + "sWDbCVpLrNBEviMNJCPoxuFxmkvsHHtXXf",  # 6) ali.gemin.pro35
+    "hf_" + "uEpYvOFeenkhKZAVtxxQJhCtBwtIiVzfSl",  # 7) shahinazfathy44
+    "hf_" + "DtzJsngMHItHpmKTgcKlhPuqYNZCfRuDLP",  # 8) motarek131313
+    "hf_" + "WeCDcvxhuUmLuOuUuiNXjlfhQUuFRfqWSg",  # 9) dudekorea6
+    "hf_" + "wXFmObaSoVYvykpWxHoHrOVsCJhhRPhdLR",  # 10) amerameryou64
+    "hf_" + "tXLZiRQsOsbnoxIARVOPkszECLjKyOXHFN",  # 11) amerameryou61
+    "hf_" + "wAIKxULbTILnnleYUvznXZfjMDsJAcWWaV",  # 12) venaelsobky
+    "hf_" + "xQFHygbLwqIRmUVPonhLDnyPEgWFKJUjDD",  # 13) حساب سابق 1
+    "hf_" + "oTFgbajxGfeVCdfwEXqfIQTSpmKFYHUDey",  # 14) حساب سابق 2
+    "hf_" + "jMELzdxWgnofnvwBKdvzEEIgwZtilPSXgI",  # 15) حساب سابق 3
+    "hf_" + "LVKDmdIxuWHReiQYbzKjqWySkryZMgrJir",  # 16) حساب سابق 4
+    "hf_" + "ZoaZszyOKKucYlXXIYrQjvWIkFbOuTPUja",  # 17) حساب سابق 5
 ]
 
 RAW_ENV_TOKENS = [t.strip() for t in os.getenv("HF_TOKEN", "").replace("\n", ",").replace(" ", ",").split(",") if t.strip()]
 HF_TOKENS = []
-# نضع المفاتيح المضافة في GitHub Secrets أولاً ثم المدمجة، بدون أي تكرار
-for token_item in RAW_ENV_TOKENS + BUILTIN_HF_KEYS:
+# نضع الـ 12 حساباً الجديدة في أول القائمة دائماً لضمان البدء بحسابات ممتلئة الرصيد
+for token_item in BUILTIN_HF_KEYS + RAW_ENV_TOKENS:
     if token_item and token_item not in HF_TOKENS:
         HF_TOKENS.append(token_item)
 
@@ -57,7 +70,7 @@ CHARACTER_MASTER_SEED = 777888
 
 os.environ.pop("HF_TOKEN", None)
 
-# سجل موحد للحسابات التي انتهى رصيدها اليومي (ZeroGPU) للانتقال الفوري للحساب التالي دون تضييع ثانية واحدة
+# سجل موحد للحسابات التي انتهى رصيدها اليومي (ZeroGPU) للانتقال الفوري للحساب التالي
 EXHAUSTED_ZEROGPU_TOKENS = set()
 
 # مؤثرات صوتية سينمائية مضبوطة الشدة والنوع لكل لقطة
@@ -80,6 +93,73 @@ BGM_URLS = [
     "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Fluffing%20a%20Duck.mp3",
     "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Monkeys%20Spinning%20Monkeys.mp3",
     "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Sneaky%20Snitch.mp3"
+]
+
+# بنك قصص بيكسار عالمية متنوعة يعمل تلقائياً إذا تركت خانة custom_prompt فارغة
+VIRAL_STORY_POOL = [
+    # القصة 1: الجدة وتيشيرت الموضة (Grandma & The Trendy Outfit)
+    (
+        "Style & Lighting: Bright vibrant 3D Pixar Disney animation movie style, warm sunny golden-hour lighting inside a cozy rustic wooden log cabin, "
+        "saturated cheerful colors, 8k render, vertical 9:16, silent visual comedy with mouths closed and no talking. "
+        "Characters: (1) Boy: 15-year-old 3D Pixar teenage boy resembling Hiro Hamada from Big Hero 6, messy spiky black hair, big dark brown eyes, NO glasses. "
+        "(2) Grandma: Cute short plump 70-year-old 3D Pixar elderly grandmother with silver-white hair, round eyeglasses, white floral headscarf, mustard-yellow knitted cardigan, and white apron. "
+        "Scenes: Scene 1 (sfx: hug_warm): Side-view medium shot at the sunny wooden cabin doorway; the spiky-haired boy wearing black headphones around his neck, "
+        "an oversized white t-shirt with a blue paint handprint in the center, and ripped blue jeans walks in and warmly hugs his short plump grandmother, mouths closed. "
+        "Scene 2 (sfx: place_clothes): Medium shot in the sunlit cabin; the spiky-haired boy wearing a white tank top and light-blue casual shorts with tiny yellow ducks "
+        "places his white t-shirt with the blue paint handprint onto a wooden chair, mouth closed. "
+        "Scene 3 (sfx: gasp_shock): Close-up portrait of the plump elderly grandmother ALONE holding up the white t-shirt with the blue paint handprint on a wooden hanger, "
+        "her eyes wide open in dramatic cartoon shock, hand on her chest, no talking. "
+        "Scene 4 (sfx: water_scrub): Top-down close-up shot of hands ONLY (NO faces in frame): elderly hands with mustard-yellow knitted sleeves vigorously scrubbing the white t-shirt "
+        "inside a round white washbasin filled with soapy water and big white foam bubbles on a wooden table. "
+        "Scene 5 (sfx: sewing_machine): Macro close-up shot of a white sewing machine needle ONLY (NO faces in frame) rapidly stitching a huge bright-yellow cartoon sun emblem "
+        "with orange rays onto the center of a clean white t-shirt. "
+        "Scene 6 (sfx: proud_chime): Medium shot of the plump elderly grandmother ALONE in the sunlit cabin, beaming with a proud closed-mouth smile as she holds up the clean white t-shirt "
+        "featuring the giant yellow cartoon sun emblem on the chest. "
+        "Scene 7 Climax Music Stops (sfx: boy_horror): Medium close-up shot of the spiky-haired boy ALONE wearing the white t-shirt with the giant yellow sun emblem on his chest "
+        "and blue jeans covered in red-checkered patches; the boy has a horrified, terrified, shocked facial expression (NOT smiling) with wide eyes, open screaming mouth, and both hands grabbing his head in panic. "
+        "Scene 8 (sfx: faint_thud): High-angle full-body shot of the spiky-haired boy ALONE lying flat on his back passed out unconscious on the wooden cabin floor with arms and legs spread out, "
+        "wearing the white t-shirt with the big yellow sun emblem and colorful patched blue jeans."
+    ),
+    # القصة 2: القط الشيف والبيتزا الحارة جداً (The Tiny Chef Cat & The Super Spicy Pizza)
+    (
+        "Style & Lighting: Bright vibrant 3D Pixar Disney animation movie style, warm sunny Italian kitchen lighting, saturated cheerful colors, 8k render, vertical 9:16, "
+        "silent visual comedy with mouths closed and no talking. Characters: (1) Chef Cat: A cute chubby orange tabby cat wearing a tiny white chef hat and a red neck scarf. "
+        "(2) Boy: A 15-year-old 3D Pixar teenage boy with messy black hair wearing a blue hoodie. "
+        "Scenes: Scene 1 (sfx: pop): Medium shot in a bright sunlit kitchen; the cute chubby orange tabby cat wearing a white chef hat stands proudly behind a freshly baked cheese pizza on a wooden counter. "
+        "Scene 2 (sfx: place_clothes): Close-up of the orange chef cat's paws reaching for a bright red bottle labeled HOT CHILI SAUCE with a fiery chili pepper icon instead of ketchup. "
+        "Scene 3 (sfx: water_scrub): Macro close-up of the red chili bottle pouring a massive pool of glowing fiery red hot sauce all over the pizza slice. "
+        "Scene 4 (sfx: proud_chime): Medium shot of the cute orange chef cat ALONE pushing the plate with the fiery red pizza slice toward the camera with a proud innocent closed-mouth smile. "
+        "Scene 5 (sfx: pop): Close-up of the teenage boy in the blue hoodie taking a huge bite of the pizza slice with his eyes closed happily. "
+        "Scene 6 (sfx: gasp_shock): Extreme close-up of the boy ALONE; his eyes suddenly pop wide open in shock as his entire face turns bright tomato red and steam puffs out of his ears. "
+        "Scene 7 Climax Music Stops (sfx: boy_horror): Medium shot of the boy ALONE with a terrified panicked expression (NOT smiling), mouth wide open breathing a comic burst of cartoon fire flames while grabbing his throat. "
+        "Scene 8 (sfx: water_scrub): Full shot of the boy diving head-first into a giant glass water pitcher on the table while the orange chef cat watches in hilarious shock with paws on its cheeks."
+    ),
+    # القصة 3: الكلب الذكي وقفل الثلاجة (The Genius Puppy vs. The Locked Fridge)
+    (
+        "Style & Lighting: Bright vibrant 3D Pixar Disney animation movie style, sunny modern kitchen, saturated colors, 8k render, vertical 9:16, silent visual comedy. "
+        "Characters: (1) Puppy: A cute fluffy golden retriever puppy wearing a blue collar. (2) Owner: A cheerful 3D Pixar young man in a green sweater. "
+        "Scenes: Scene 1 (sfx: pop): Medium shot of the cute golden retriever puppy sitting in front of an open fridge staring with big sparkling eyes at a giant chocolate cake with strawberries. "
+        "Scene 2 (sfx: place_clothes): Close-up of hands closing the silver fridge door and locking it with a big golden padlock and chain. "
+        "Scene 3 (sfx: gasp_shock): Close-up of the fluffy golden retriever puppy ALONE looking at the locked fridge with wide shocked eyes and tilted head. "
+        "Scene 4 (sfx: sewing_machine): Close-up of the puppy's paws holding a shiny metal spoon like a key and cleverly picking the golden padlock on the fridge door. "
+        "Scene 5 (sfx: proud_chime): Close-up of the golden padlock popping open and falling onto the kitchen floor as the fridge door swings open with glowing light. "
+        "Scene 6 (sfx: cheer): Medium shot inside the glowing fridge; the chubby golden retriever puppy is sitting inside on the shelf with chocolate frosting all over its nose and a huge bloated belly next to an empty cake plate. "
+        "Scene 7 Climax Music Stops (sfx: boy_horror): Close-up of the young man in the green sweater ALONE looking into the open fridge with a horrified, shocked facial expression (NOT smiling), jaw dropped wide open and hands on his head. "
+        "Scene 8 (sfx: faint_thud): High-angle shot of the young man ALONE lying flat on his back passed out on the kitchen floor while the chubby puppy licks his cheek."
+    ),
+    # القصة 4: الأب وماكينة الألعاب المستحيلة (Dad vs. The Impossible Claw Machine)
+    (
+        "Style & Lighting: Bright vibrant 3D Pixar Disney animation movie style, colorful glowing arcade room, saturated neon and warm lighting, 8k render, vertical 9:16, silent visual comedy. "
+        "Characters: (1) Dad: A 30-year-old 3D Pixar dad in a yellow polo shirt. (2) Toddler: A cute 3-year-old 3D Pixar toddler boy in blue overalls with big round eyes. "
+        "Scenes: Scene 1 (sfx: cheer): Medium shot in a colorful arcade; the cute toddler in blue overalls points excitedly at a giant pink teddy bear inside a glass claw machine. "
+        "Scene 2 (sfx: pop): Medium shot of the dad in the yellow polo shirt cracking his knuckles confidently and grabbing the red arcade joystick with intense focus. "
+        "Scene 3 (sfx: sewing_machine): Close-up inside the glass machine; the metal claw grabs the pink teddy bear, lifts it up, and drops it right before the chute. "
+        "Scene 4 (sfx: gasp_shock): Close-up of the dad ALONE with an angry frustrated red face, steam coming from his head, surrounded by a pile of empty coin buckets. "
+        "Scene 5 (sfx: boing): Close-up of the tiny toddler's hand reaching up and playfully slapping the big red arcade button once with a giggle. "
+        "Scene 6 (sfx: proud_chime): Wide shot of the claw machine shaking و exploding with a mountain of twenty colorful teddy bears pouring out of the prize door onto the floor. "
+        "Scene 7 Climax Music Stops (sfx: boy_horror): Close-up of the dad ALONE staring at the mountain of teddy bears with a shocked, stunned, disbelieving facial expression (NOT smiling), jaw touching the floor. "
+        "Scene 8 (sfx: faint_thud): High-angle shot of the dad lying flat on his back passed out on the arcade floor while the cute toddler hugs the giant pink teddy bear on top of him."
+    )
 ]
 
 
@@ -188,29 +268,20 @@ def generate_storyboard_from_user_prompt(user_prompt, audio_style, scenes_count)
         else 'Write a very short Egyptian Arabic sentence (3 to 5 words) in "narration" for each scene.'
     )
 
-    user_direction = (
-        f"Execute this exact detailed user prompt faithfully with 100% of its character details, camera framing, clothes, colors, actions, and SFX:\n{user_prompt}"
-        if user_prompt
-        else (
-            "Create a viral 3D Pixar silent visual comedy storyboard: a spiky-haired boy (like Hiro Hamada, no glasses) "
-            "visits his cute plump 70-year-old grandmother wearing a trendy white t-shirt with a blue paint handprint and ripped blue jeans. "
-            "Grandma gasps in shock, scrubs the shirt in a soapy basin (hands only close-up), stitches a giant yellow sun emblem onto the shirt (needle close-up), "
-            "proudly shows it alone, he stares in horror with hands on head (music stops), and faints flat on his back on the wooden floor."
-        )
-    )
+    chosen_prompt = user_prompt if user_prompt else random.choice(VIRAL_STORY_POOL)
 
     prompt = f"""
     You are a world-class 3D Pixar Disney animation director.
-    Convert the following request into exactly {scenes_count} sequential scenes:
-    {user_direction}
+    Convert the following detailed story into exactly {scenes_count} sequential scenes:
+    {chosen_prompt}
 
     Strict Framing & Consistency Rules:
     1. Start EVERY `image_prompt` with the main subject and action FIRST so the subject is never cut off, followed by:
        "Bright vibrant 3D Pixar Disney animation movie frame, warm sunny golden-hour lighting, saturated cheerful colors, ultra-clean 8k render, vertical 9:16."
     2. CRITICAL CAMERA FRAMING RULE:
-       - If a scene is a close-up of hands or an object (like hands scrubbing in a washbasin, or a sewing machine needle), describe ONLY the hands and the object (`Close-up of hands only, NO faces or heads in frame`). Do NOT put full characters in macro object shots!
-       - If a scene focuses on ONE character reacting (like Grandma proudly holding up the shirt, or the Boy reacting in horror, or the Boy lying fainted on the floor), include ONLY that single character in the `image_prompt` so FLUX does not mix up their clothes!
-       - When a character is shocked or horrified, NEVER use the word "smiling" anywhere in that scene's prompt (even for a sun graphic, call it "a yellow cartoon sun emblem with orange rays") so the character's face looks genuinely horrified and NOT smiling!
+       - If a scene is a close-up of hands/paws or an object (like scrubbing in a washbasin, or a sewing machine needle, or pouring sauce), describe ONLY the hands/paws and the object (`Close-up of hands only, NO faces or heads in frame`).
+       - If a scene focuses on ONE character reacting (like Grandma holding up the shirt, or the Boy reacting in horror, or fainted on the floor), include ONLY that single character in the `image_prompt` so FLUX does not mix up their clothes!
+       - When a character is shocked or horrified, NEVER use the word "smiling" anywhere in that scene's prompt so the character's face looks genuinely horrified and NOT smiling!
     3. {silent_rule}
     4. Choose `sfx_type` for each scene strictly from this list: {available_sfx}
     5. Set `duration` between 2.0 and 2.3 seconds per scene.
@@ -328,7 +399,6 @@ def create_scene_audio(index, scene, out_audio_file):
 
 
 def save_vibrant_pixar_image(src_bytes_or_path, dst_file, is_bytes=False, crop_watermark=False):
-    """حفظ الصورة بأعلى نقاء Full HD 1080x1920 مع ألوان Pixar المشرقة"""
     if is_bytes:
         with open("temp_img_raw", "wb") as f:
             f.write(src_bytes_or_path)
@@ -393,13 +463,13 @@ def is_quota_error(err_text):
 def download_scene_image(index, image_prompt, img_file):
     """
     توليد الصور بأقصى دقة استوديو (1024x1792 Full HD) عبر مساحات FLUX.1 الرسمية
-    مع التبديل الفوري بين جميع مفاتيح HF_TOKENS المربوطة!
+    باستخدام المفاتيح من رقم #9 إلى #12 أولاً حتى تبقى المفاتيح #1 إلى #8 مخصصة بالكامل لتحريك الفيديو!
     """
     # 1. Google Nano Banana
     if generate_image_with_nano_banana(index, image_prompt, img_file):
         return
 
-    # 2. Hugging Face Router FLUX.1-schnell (لا يستهلك ZeroGPU إن كان مفعلاً في المفتاح)
+    # 2. Hugging Face Router FLUX.1-schnell
     for t_idx, tok in enumerate(HF_TOKENS):
         try:
             hf_url = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
@@ -416,13 +486,14 @@ def download_scene_image(index, image_prompt, img_file):
         except Exception:
             pass
 
-    # 3. مساحة Hugging Face الرسمية black-forest-labs/FLUX.1-schnell بأعلى دقة 1024x1792 و 4 خطوات كاملة!
-    all_pool = [None] + HF_TOKENS
-    for pool_idx, tok in enumerate(all_pool):
-        tok_key = "SERVER_IP" if tok is None else f"ACCOUNT_{pool_idx}"
+    # 3. مساحة Hugging Face الرسمية black-forest-labs/FLUX.1-schnell بدقة 1024x1792
+    # نبدأ من المفتاح رقم #9 فما بعده للصور حتى نترك المفاتيح #1 إلى #8 صافية 100% لتحريك الفيديو!
+    image_ordered_pool = HF_TOKENS[8:] + HF_TOKENS[:8] + [None]
+    for tok in image_ordered_pool:
+        tok_key = "SERVER_IP" if tok is None else f"TOK_{tok[:12]}"
         if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
             continue
-        quota_label = "IP السيرفر المجاني" if tok is None else f"مفتاح HF #{pool_idx}"
+        quota_label = "IP السيرفر المجاني" if tok is None else f"مفتاح HF ({tok[:10]}...)"
         try:
             client = Client("black-forest-labs/FLUX.1-schnell", token=tok, verbose=False)
             res = client.predict(
@@ -447,7 +518,7 @@ def download_scene_image(index, image_prompt, img_file):
                 EXHAUSTED_ZEROGPU_TOKENS.add(tok_key)
                 continue
 
-    # 4. Pollinations Flux HD كبديل طوارئ أخير فقط (مع الحفاظ على أول 260 حرفاً حيث توجد الشخصية الرئيسية)
+    # 4. Pollinations Flux HD كبديل طوارئ أخير فقط
     short_prompt = image_prompt[:260]
     encoded_prompt = urllib.parse.quote(short_prompt, safe='')
     for attempt in range(3):
@@ -485,8 +556,8 @@ def extract_video_path(result):
 
 def animate_image_with_ai(index, img_file, motion_prompt, duration, out_raw_video):
     """
-    تحريك المشاهد بأقصى جودة استوديو عبر Wan 2.2 (6 خطوات كاملة ومدة 2.4 ثانية)
-    مع التبديل الفوري عبر جميع الحسابات المربوطة في HF_TOKENS!
+    تحريك جميع المشاهد بأقصى جودة استوديو عبر Wan 2.2 (6 خطوات كاملة ومدة 2.4 ثانية)
+    مع التبديل التلقائي بين الـ 17 مفتاحاً!
     """
     silent_clause = ", silent visual acting, no talking, keep mouth closed" if AUDIO_STYLE == "sfx_only" else ""
     full_motion = f"{motion_prompt}, bright vibrant 3D Pixar animation, smooth expressive movement{silent_clause}"
@@ -498,11 +569,11 @@ def animate_image_with_ai(index, img_file, motion_prompt, duration, out_raw_vide
     all_pool = [None] + HF_TOKENS
 
     for pool_idx, tok in enumerate(all_pool):
-        tok_key = "SERVER_IP" if tok is None else f"ACCOUNT_{pool_idx}"
+        tok_key = "SERVER_IP" if tok is None else f"TOK_{tok[:12]}"
         if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
             continue
 
-        quota_label = "IP السيرفر المجاني" if tok is None else f"مفتاح HF #{pool_idx}"
+        quota_label = "IP السيرفر المجاني" if tok is None else f"مفتاح HF #{pool_idx} ({tok[:10]}...)"
 
         # 1. Wan 2.2 Faster بأعلى جودة (steps=6, guidance_scale=1.2)
         try:
@@ -528,7 +599,7 @@ def animate_image_with_ai(index, img_file, motion_prompt, duration, out_raw_vide
                 return True
         except Exception as e:
             if is_quota_error(e):
-                print(f"⚠️ انتهى ليميت ({quota_label})، جاري التبديل تلقائياً للمفتاح التالي...", flush=True)
+                print(f"⚠️ انتهى ليميت ({quota_label})، جاري التبديل فوراً للحساب التالي...", flush=True)
                 EXHAUSTED_ZEROGPU_TOKENS.add(tok_key)
                 continue
             try:
@@ -540,7 +611,7 @@ def animate_image_with_ai(index, img_file, motion_prompt, duration, out_raw_vide
                 return True
             except Exception as e2:
                 if is_quota_error(e2):
-                    print(f"⚠️ انتهى ليميت ({quota_label})، جاري التبديل تلقائياً للمفتاح التالي...", flush=True)
+                    print(f"⚠️ انتهى ليميت ({quota_label})، جاري التبديل فوراً للحساب التالي...", flush=True)
                     EXHAUSTED_ZEROGPU_TOKENS.add(tok_key)
                     continue
 
@@ -874,11 +945,11 @@ def upload_to_instagram_reels(video_path, title, ig_user_id):
 
 
 def assemble_and_publish():
-    print(f"إجمالي مفاتيح Hugging Face الجاهزة: {len(HF_TOKENS)} مفاتيح (+ IP السيرفر المجاني)", flush=True)
+    print(f"🚀 إجمالي حسابات ومفاتيح Hugging Face الجاهزة: {len(HF_TOKENS)} مفتاحاً (+ IP السيرفر المجاني)", flush=True)
     if CUSTOM_PROMPT:
         print(f"📝 تم استلام برومبت مخصص من الواجهة: {CUSTOM_PROMPT[:120]}...", flush=True)
     else:
-        print("🤖 وضع التأليف التلقائي الذكي (لم يتم إدخال برومبت مخصص)", flush=True)
+        print("🤖 وضع اختيار القصة التلقائي من بنك القصص العالمية", flush=True)
 
     story = generate_storyboard_from_user_prompt(CUSTOM_PROMPT, AUDIO_STYLE, SCENES_COUNT)
     print(f"عنوان الفيديو: {story['title']}", flush=True)
