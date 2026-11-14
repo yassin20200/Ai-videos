@@ -27,7 +27,7 @@ try:
 except ValueError:
     SCENES_COUNT = 8
 
-# المفاتيح الخمسة مدمجة ومحمية + أي مفاتيح في Secrets
+# المفاتيح الأساسية + قراءة أي عدد من المفاتيح (10 أو 14 أو أكثر) من HF_TOKEN في GitHub Secrets
 BUILTIN_HF_KEYS = [
     "hf_" + "xQFHygbLwqIRmUVPonhLDnyPEgWFKJUjDD",
     "hf_" + "oTFgbajxGfeVCdfwEXqfIQTSpmKFYHUDey",
@@ -38,7 +38,8 @@ BUILTIN_HF_KEYS = [
 
 RAW_ENV_TOKENS = [t.strip() for t in os.getenv("HF_TOKEN", "").replace("\n", ",").replace(" ", ",").split(",") if t.strip()]
 HF_TOKENS = []
-for token_item in BUILTIN_HF_KEYS + RAW_ENV_TOKENS:
+# نضع المفاتيح المضافة في GitHub Secrets أولاً ثم المدمجة، بدون أي تكرار
+for token_item in RAW_ENV_TOKENS + BUILTIN_HF_KEYS:
     if token_item and token_item not in HF_TOKENS:
         HF_TOKENS.append(token_item)
 
@@ -56,23 +57,23 @@ CHARACTER_MASTER_SEED = 777888
 
 os.environ.pop("HF_TOKEN", None)
 
-EXHAUSTED_VIDEO_TOKENS = set()
-EXHAUSTED_IMAGE_TOKENS = set()
+# سجل موحد للحسابات التي انتهى رصيدها اليومي (ZeroGPU) للانتقال الفوري للحساب التالي دون تضييع ثانية واحدة
+EXHAUSTED_ZEROGPU_TOKENS = set()
 
-# مكتبة مؤثرات صوتية شاملة تغطي كل أنواع الحركات والانفعالات في أي برومبت
+# مؤثرات صوتية سينمائية مضبوطة الشدة والنوع لكل لقطة
 STUDIO_FOLEY_URLS = {
-    "hug_warm": "https://actions.google.com/sounds/v1/foley/cloth_flapping.ogg",
-    "place_clothes": "https://actions.google.com/sounds/v1/foley/footsteps_on_wood.ogg",
-    "gasp_shock": "https://actions.google.com/sounds/v1/cartoon/concussive_hit_guitar_boing.ogg",
-    "sewing_machine": "https://actions.google.com/sounds/v1/office/typewriter_fast.ogg",
-    "water_scrub": "https://actions.google.com/sounds/v1/water/water_splashing.ogg",
-    "proud_chime": "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg",
-    "boy_horror": "https://actions.google.com/sounds/v1/cartoon/slide_whistle_to_drum.ogg",
-    "faint_thud": "https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg",
-    "pop": "https://actions.google.com/sounds/v1/cartoon/pop.ogg",
-    "boing": "https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg",
-    "whoosh": "https://actions.google.com/sounds/v1/foley/whoosh.ogg",
-    "cheer": "https://actions.google.com/sounds/v1/crowds/battle_crowd_celebrate_stutter.ogg"
+    "hug_warm": ("https://actions.google.com/sounds/v1/cartoon/pop.ogg", 0.45),
+    "place_clothes": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.40),
+    "gasp_shock": ("https://actions.google.com/sounds/v1/cartoon/concussive_hit_guitar_boing.ogg", 0.85),
+    "water_scrub": ("https://actions.google.com/sounds/v1/water/water_splashing.ogg", 0.80),
+    "sewing_machine": ("https://actions.google.com/sounds/v1/office/typewriter_fast.ogg", 0.80),
+    "proud_chime": ("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg", 0.75),
+    "boy_horror": ("https://actions.google.com/sounds/v1/cartoon/slide_whistle_to_drum.ogg", 0.95),
+    "faint_thud": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.95),
+    "pop": ("https://actions.google.com/sounds/v1/cartoon/pop.ogg", 0.55),
+    "boing": ("https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg", 0.75),
+    "whoosh": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.50),
+    "cheer": ("https://actions.google.com/sounds/v1/crowds/battle_crowd_celebrate_stutter.ogg", 0.70)
 }
 
 BGM_URLS = [
@@ -167,7 +168,6 @@ def ensure_arabic_font():
 
 
 def repair_and_parse_json(raw_text):
-    """تنظيف وإصلاح أي نص JSON قادم من Gemini لضمان عدم حدوث خطأ فواصل أو علامات تنصيص"""
     cleaned = raw_text.strip()
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
@@ -175,32 +175,27 @@ def repair_and_parse_json(raw_text):
     try:
         return json.loads(cleaned)
     except Exception:
-        # إزالة أي فواصل زائدة قبل الأقواس المغلقة ] أو }
         fixed = re.sub(r",\s*([\]}])", r"\1", cleaned)
         return json.loads(fixed)
 
 
 def generate_storyboard_from_user_prompt(user_prompt, audio_style, scenes_count):
-    """
-    تحويل البرومبت التفصيلي الذي يكتبه المستخدم إلى خطة إخراجية كاملة (Storyboard)
-    باستخدام نظام Structured Outputs (responseSchema) الذي يجبر Gemini على إخراج JSON سليم 100%.
-    """
     available_sfx = list(STUDIO_FOLEY_URLS.keys())
     silent_rule = (
-        'Set "narration" to "" (empty string) in all scenes because this is a silent visual comedy video, '
+        'Set "narration" to "" in all scenes because this is a silent visual comedy video, '
         'and always end every motion_prompt with: "mouth closed, no talking, silent visual acting".'
         if audio_style == "sfx_only"
         else 'Write a very short Egyptian Arabic sentence (3 to 5 words) in "narration" for each scene.'
     )
 
     user_direction = (
-        f"Execute this exact detailed user prompt faithfully with 100% of its character details, clothes, colors, actions, and SFX:\n{user_prompt}"
+        f"Execute this exact detailed user prompt faithfully with 100% of its character details, camera framing, clothes, colors, actions, and SFX:\n{user_prompt}"
         if user_prompt
         else (
             "Create a viral 3D Pixar silent visual comedy storyboard: a spiky-haired boy (like Hiro Hamada, no glasses) "
             "visits his cute plump 70-year-old grandmother wearing a trendy white t-shirt with a blue paint handprint and ripped blue jeans. "
-            "Grandma gasps in shock, scrubs the shirt in a soapy basin, stitches a giant smiling yellow cartoon sun patch onto the shirt "
-            "and checkered patches onto the jeans, proudly hands it to him, he stares in horror (music stops), and faints on the wooden floor."
+            "Grandma gasps in shock, scrubs the shirt in a soapy basin (hands only close-up), stitches a giant yellow sun emblem onto the shirt (needle close-up), "
+            "proudly shows it alone, he stares in horror with hands on head (music stops), and faints flat on his back on the wooden floor."
         )
     )
 
@@ -209,14 +204,17 @@ def generate_storyboard_from_user_prompt(user_prompt, audio_style, scenes_count)
     Convert the following request into exactly {scenes_count} sequential scenes:
     {user_direction}
 
-    Strict Production Rules:
-    1. Character & Lighting Consistency: Start EVERY `image_prompt` with:
+    Strict Framing & Consistency Rules:
+    1. Start EVERY `image_prompt` with the main subject and action FIRST so the subject is never cut off, followed by:
        "Bright vibrant 3D Pixar Disney animation movie frame, warm sunny golden-hour lighting, saturated cheerful colors, ultra-clean 8k render, vertical 9:16."
-       And repeat the full physical description of the characters and their exact outfit in EVERY scene's `image_prompt` (do NOT use double quotes inside strings).
-    2. {silent_rule}
-    3. Choose `sfx_type` for each scene strictly from this list: {available_sfx}
-    4. Set `duration` between 2.0 and 2.4 seconds per scene.
-    5. Set `climax_scene_index` to the 0-based index of the shock/climax scene where background music should pause (e.g. {max(scenes_count - 2, 1)}).
+    2. CRITICAL CAMERA FRAMING RULE:
+       - If a scene is a close-up of hands or an object (like hands scrubbing in a washbasin, or a sewing machine needle), describe ONLY the hands and the object (`Close-up of hands only, NO faces or heads in frame`). Do NOT put full characters in macro object shots!
+       - If a scene focuses on ONE character reacting (like Grandma proudly holding up the shirt, or the Boy reacting in horror, or the Boy lying fainted on the floor), include ONLY that single character in the `image_prompt` so FLUX does not mix up their clothes!
+       - When a character is shocked or horrified, NEVER use the word "smiling" anywhere in that scene's prompt (even for a sun graphic, call it "a yellow cartoon sun emblem with orange rays") so the character's face looks genuinely horrified and NOT smiling!
+    3. {silent_rule}
+    4. Choose `sfx_type` for each scene strictly from this list: {available_sfx}
+    5. Set `duration` between 2.0 and 2.3 seconds per scene.
+    6. Set `climax_scene_index` to the 0-based index of the shock/climax scene where background music should pause (e.g. {max(scenes_count - 2, 1)}).
     """
 
     response_schema = {
@@ -249,7 +247,7 @@ def generate_storyboard_from_user_prompt(user_prompt, audio_style, scenes_count)
             "responseMimeType": "application/json",
             "responseSchema": response_schema,
             "maxOutputTokens": 8192,
-            "temperature": 0.35
+            "temperature": 0.3
         }
     }
 
@@ -268,7 +266,7 @@ def generate_storyboard_from_user_prompt(user_prompt, audio_style, scenes_count)
                 print(f"تنبيه Gemini ({model} - محاولة {attempt + 1}): {e}", flush=True)
                 time.sleep(3)
 
-    raise RuntimeError("فشل الاتصال بـ Gemini API لتحويل البرومبت بعد عدة محاولات")
+    raise RuntimeError("فشل الاتصال بـ Gemini API لتحويل البرومبت")
 
 
 def create_scene_audio(index, scene, out_audio_file):
@@ -279,7 +277,7 @@ def create_scene_audio(index, scene, out_audio_file):
 
     raw_ogg = f"raw_sfx_{index}.ogg"
     sfx_wav = f"sfx_base_{index}.wav"
-    sfx_url = STUDIO_FOLEY_URLS.get(sfx_type, STUDIO_FOLEY_URLS["pop"])
+    sfx_url, sfx_vol = STUDIO_FOLEY_URLS.get(sfx_type, STUDIO_FOLEY_URLS["pop"])
 
     sfx_ok = False
     try:
@@ -292,7 +290,7 @@ def create_scene_audio(index, scene, out_audio_file):
                 "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={duration}",
                 "-stream_loop", "1", "-i", raw_ogg,
                 "-filter_complex",
-                f"[1:a]atrim=0:{duration},afade=t=in:d=0.04,afade=t=out:st={max(duration - 0.35, 0.2)}:d=0.35,volume=0.85[s];"
+                f"[1:a]atrim=0:{duration},afade=t=in:d=0.04,afade=t=out:st={max(duration - 0.35, 0.2)}:d=0.35,volume={sfx_vol}[s];"
                 f"[0:a][s]amix=inputs=2:duration=first:dropout_transition=0[a]",
                 "-map", "[a]", "-t", str(duration), "-ar", "44100", "-ac", "2", sfx_wav
             ], check=True)
@@ -330,6 +328,7 @@ def create_scene_audio(index, scene, out_audio_file):
 
 
 def save_vibrant_pixar_image(src_bytes_or_path, dst_file, is_bytes=False, crop_watermark=False):
+    """حفظ الصورة بأعلى نقاء Full HD 1080x1920 مع ألوان Pixar المشرقة"""
     if is_bytes:
         with open("temp_img_raw", "wb") as f:
             f.write(src_bytes_or_path)
@@ -342,9 +341,9 @@ def save_vibrant_pixar_image(src_bytes_or_path, dst_file, is_bytes=False, crop_w
         img = img.crop((0, 0, w, int(h * 0.95)))
 
     img = img.resize((1080, 1920), Image.Resampling.LANCZOS)
-    img = ImageEnhance.Brightness(img).enhance(1.07)
-    img = ImageEnhance.Color(img).enhance(1.22)
-    img = ImageEnhance.Contrast(img).enhance(1.06)
+    img = ImageEnhance.Brightness(img).enhance(1.06)
+    img = ImageEnhance.Color(img).enhance(1.20)
+    img = ImageEnhance.Contrast(img).enhance(1.05)
     img = img.filter(ImageFilter.UnsharpMask(radius=1.5, percent=130, threshold=3))
     img.save(dst_file, "JPEG", quality=98)
 
@@ -360,23 +359,7 @@ def generate_image_with_nano_banana(index, image_prompt, img_file):
         "gemini-2.5-flash-image"
     ]
 
-    parts = []
-    if index > 0 and os.path.exists("scene_0.jpg"):
-        try:
-            with open("scene_0.jpg", "rb") as rf:
-                b64_ref = base64.b64encode(rf.read()).decode("utf-8")
-            parts.append({"inlineData": {"mimeType": "image/jpeg", "data": b64_ref}})
-            parts.append({
-                "text": (
-                    "Keep the exact same 3D Pixar character designs, faces, and bright sunny art style from this reference image. "
-                    f"Generate a new vertical 9:16 scene: {image_prompt}"
-                )
-            })
-        except Exception:
-            parts = [{"text": image_prompt}]
-    else:
-        parts = [{"text": image_prompt}]
-
+    parts = [{"text": image_prompt}]
     for model_name in nano_models:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
         for cfg in [
@@ -384,7 +367,7 @@ def generate_image_with_nano_banana(index, image_prompt, img_file):
             {"responseModalities": ["TEXT", "IMAGE"]}
         ]:
             try:
-                r = requests.post(url, json={"contents": [{"parts": parts}], "generationConfig": cfg}, timeout=60)
+                r = requests.post(url, json={"contents": [{"parts": parts}], "generationConfig": cfg}, timeout=50)
                 if r.status_code == 200:
                     rj = r.json()
                     for cand in rj.get("candidates", []):
@@ -408,11 +391,15 @@ def is_quota_error(err_text):
 
 
 def download_scene_image(index, image_prompt, img_file):
+    """
+    توليد الصور بأقصى دقة استوديو (1024x1792 Full HD) عبر مساحات FLUX.1 الرسمية
+    مع التبديل الفوري بين جميع مفاتيح HF_TOKENS المربوطة!
+    """
     # 1. Google Nano Banana
     if generate_image_with_nano_banana(index, image_prompt, img_file):
         return
 
-    # 2. Hugging Face Router FLUX.1-schnell
+    # 2. Hugging Face Router FLUX.1-schnell (لا يستهلك ZeroGPU إن كان مفعلاً في المفتاح)
     for t_idx, tok in enumerate(HF_TOKENS):
         try:
             hf_url = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
@@ -429,12 +416,13 @@ def download_scene_image(index, image_prompt, img_file):
         except Exception:
             pass
 
-    # 3. مساحة Hugging Face الرسمية black-forest-labs/FLUX.1-schnell بدقة 1024x1792
-    image_token_pool = list(reversed(HF_TOKENS)) + [None]
-    for tok in image_token_pool:
-        tok_id = "IMG_IP" if tok is None else f"IMG_TOK_{tok[:10]}"
-        if tok_id in EXHAUSTED_IMAGE_TOKENS:
+    # 3. مساحة Hugging Face الرسمية black-forest-labs/FLUX.1-schnell بأعلى دقة 1024x1792 و 4 خطوات كاملة!
+    all_pool = [None] + HF_TOKENS
+    for pool_idx, tok in enumerate(all_pool):
+        tok_key = "SERVER_IP" if tok is None else f"ACCOUNT_{pool_idx}"
+        if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
             continue
+        quota_label = "IP السيرفر المجاني" if tok is None else f"مفتاح HF #{pool_idx}"
         try:
             client = Client("black-forest-labs/FLUX.1-schnell", token=tok, verbose=False)
             res = client.predict(
@@ -451,15 +439,17 @@ def download_scene_image(index, image_prompt, img_file):
                 img_path = img_path["path"]
             if isinstance(img_path, str) and os.path.exists(img_path):
                 save_vibrant_pixar_image(img_path, img_file, is_bytes=False, crop_watermark=False)
-                print(f"✨ تم تصميم صورة المشهد {index + 1} عبر مساحة FLUX.1 الرسمية بدقة 1024x1792!", flush=True)
+                print(f"✨ تم تصميم صورة المشهد {index + 1} عبر مساحة FLUX.1 الرسمية بدقة 1024x1792 ({quota_label})!", flush=True)
                 return
         except Exception as e:
             if is_quota_error(e):
-                EXHAUSTED_IMAGE_TOKENS.add(tok_id)
+                print(f"⚠️ انتهى ليميت ({quota_label}) أثناء الصورة، جاري التبديل تلقائياً للمفتاح التالي...", flush=True)
+                EXHAUSTED_ZEROGPU_TOKENS.add(tok_key)
                 continue
 
-    # 4. Pollinations Flux HD كبديل أخير
-    encoded_prompt = urllib.parse.quote(image_prompt, safe='')
+    # 4. Pollinations Flux HD كبديل طوارئ أخير فقط (مع الحفاظ على أول 260 حرفاً حيث توجد الشخصية الرئيسية)
+    short_prompt = image_prompt[:260]
+    encoded_prompt = urllib.parse.quote(short_prompt, safe='')
     for attempt in range(3):
         time.sleep(5 + attempt * 3)
         try:
@@ -494,6 +484,10 @@ def extract_video_path(result):
 
 
 def animate_image_with_ai(index, img_file, motion_prompt, duration, out_raw_video):
+    """
+    تحريك المشاهد بأقصى جودة استوديو عبر Wan 2.2 (6 خطوات كاملة ومدة 2.4 ثانية)
+    مع التبديل الفوري عبر جميع الحسابات المربوطة في HF_TOKENS!
+    """
     silent_clause = ", silent visual acting, no talking, keep mouth closed" if AUDIO_STYLE == "sfx_only" else ""
     full_motion = f"{motion_prompt}, bright vibrant 3D Pixar animation, smooth expressive movement{silent_clause}"
     neg_prompt = (
@@ -505,12 +499,12 @@ def animate_image_with_ai(index, img_file, motion_prompt, duration, out_raw_vide
 
     for pool_idx, tok in enumerate(all_pool):
         tok_key = "SERVER_IP" if tok is None else f"ACCOUNT_{pool_idx}"
-        if tok_key in EXHAUSTED_VIDEO_TOKENS:
+        if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
             continue
 
         quota_label = "IP السيرفر المجاني" if tok is None else f"مفتاح HF #{pool_idx}"
 
-        # 1. Wan 2.2 Faster
+        # 1. Wan 2.2 Faster بأعلى جودة (steps=6, guidance_scale=1.2)
         try:
             wan_space = "zerogpu-aoti/wan2-2-fp8da-aoti-faster"
             print(f"جاري تحريك المشهد {index + 1} عبر ({wan_space} - {quota_label})...", flush=True)
@@ -520,7 +514,7 @@ def animate_image_with_ai(index, img_file, motion_prompt, duration, out_raw_vide
                 prompt=full_motion,
                 steps=6,
                 negative_prompt=neg_prompt,
-                duration_seconds=min(duration, 2.5),
+                duration_seconds=min(duration, 2.4),
                 guidance_scale=1.2,
                 guidance_scale_2=1.2,
                 seed=CHARACTER_MASTER_SEED + index,
@@ -535,22 +529,22 @@ def animate_image_with_ai(index, img_file, motion_prompt, duration, out_raw_vide
         except Exception as e:
             if is_quota_error(e):
                 print(f"⚠️ انتهى ليميت ({quota_label})، جاري التبديل تلقائياً للمفتاح التالي...", flush=True)
-                EXHAUSTED_VIDEO_TOKENS.add(tok_key)
+                EXHAUSTED_ZEROGPU_TOKENS.add(tok_key)
                 continue
             try:
                 ps = PinnedSpace(wan_space, token=tok)
                 up_img = ps.upload(img_file)
-                out = ps.call("/generate_video", [up_img, full_motion, 6, neg_prompt, min(duration, 2.5), 1.2, 1.2, CHARACTER_MASTER_SEED + index, False])
+                out = ps.call("/generate_video", [up_img, full_motion, 6, neg_prompt, min(duration, 2.4), 1.2, 1.2, CHARACTER_MASTER_SEED + index, False])
                 ps.download_video(out, out_raw_video)
                 print(f"🎉 تم تحريك المشهد {index + 1} بنجاح عبر {wan_space} Pinned ({quota_label})!", flush=True)
                 return True
             except Exception as e2:
                 if is_quota_error(e2):
                     print(f"⚠️ انتهى ليميت ({quota_label})، جاري التبديل تلقائياً للمفتاح التالي...", flush=True)
-                    EXHAUSTED_VIDEO_TOKENS.add(tok_key)
+                    EXHAUSTED_ZEROGPU_TOKENS.add(tok_key)
                     continue
 
-        # 2. Lightricks/ltx-video-distilled
+        # 2. Lightricks/ltx-video-distilled كبديل إضافي عالي الجودة
         try:
             ltx_space = "Lightricks/ltx-video-distilled"
             print(f"جاري تحريك المشهد {index + 1} عبر ({ltx_space} - {quota_label})...", flush=True)
@@ -578,7 +572,7 @@ def animate_image_with_ai(index, img_file, motion_prompt, duration, out_raw_vide
                 return True
         except Exception as e:
             if is_quota_error(e):
-                EXHAUSTED_VIDEO_TOKENS.add(tok_key)
+                EXHAUSTED_ZEROGPU_TOKENS.add(tok_key)
                 continue
 
     return False
@@ -647,17 +641,17 @@ def create_scene_assets(index, scene):
             "-stream_loop", "-1", "-i", raw_ai_video,
             "-vf", (
                 "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
-                "eq=saturation=1.14:brightness=0.03:contrast=1.05,"
+                "eq=saturation=1.12:brightness=0.02:contrast=1.04,"
                 "cas=0.70,unsharp=3:3:0.6:3:3:0.0,setsar=1,format=yuv420p"
             ),
             "-t", str(duration), "-r", str(fps),
             "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
         ], check=True)
     else:
-        z_expr = "min(zoom+0.0030,1.25)" if index % 2 == 0 else "if(eq(on,1),1.25,max(zoom-0.0030,1.0))"
+        z_expr = "min(zoom+0.0035,1.26)" if index % 2 == 0 else "if(eq(on,1),1.26,max(zoom-0.0035,1.0))"
         zoom_filter = (
             f"scale=1440:2560:force_original_aspect_ratio=increase,crop=1440:2560,"
-            f"eq=saturation=1.14:brightness=0.03:contrast=1.05,"
+            f"eq=saturation=1.12:brightness=0.02:contrast=1.04,"
             f"zoompan=z='{z_expr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
             f"d={total_frames}:s=1080x1920:fps={fps},cas=0.6,setsar=1,format=yuv420p"
         )
@@ -923,7 +917,7 @@ def assemble_and_publish():
             "-stream_loop", "-1", "-i", bgm_file,
             "-filter_complex",
             f"[1:a]volume='if(between(t,{pause_start},{pause_end}),0.0,0.22)':eval=frame[bg];"
-            f"[0:a]volume=1.25[fg];[fg][bg]amix=inputs=2:duration=first:dropout_transition=0[a]",
+            f"[0:a]volume=1.20[fg];[fg][bg]amix=inputs=2:duration=first:dropout_transition=0[a]",
             "-map", "0:v", "-map", "[a]",
             "-vf", "scale=1080:1920,setsar=1,format=yuv420p",
             "-r", "30", "-c:v", "libx264", "-preset", "fast", "-profile:v", "high",
