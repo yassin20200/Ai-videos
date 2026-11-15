@@ -5,33 +5,34 @@ on:
     - cron: '0 18 * * *'
   workflow_dispatch:
     inputs:
+      content_type:
+        description: 'نوع المحتوى (إسلامي سني / موعظة وحكمة / تفاعلي كرة قدم A أو B)'
+        required: true
+        default: 'islamic_story'
+        type: choice
+        options:
+          - islamic_story
+          - moral_wisdom
+          - interactive_football
       custom_prompt:
-        description: 'اكتب وصف الفيديو بالتفصيل (القصة، الملابس، الحركات، الأصوات، الألوان) أو اتركه فارغاً للتوليد التلقائي'
+        description: 'اكتب اسم القصة أو تفاصيلها (أو اتركه فارغاً ليختار قصة إسلامية صحيحة تلقائياً)'
         required: false
         default: ''
         type: string
-      audio_style:
-        description: 'أسلوب الصوت في الفيديو'
-        required: true
-        default: 'sfx_only'
-        type: choice
-        options:
-          - sfx_only
-          - voice_and_sfx
       scenes_count:
-        description: 'عدد مشاهد الفيديو'
+        description: 'عدد المشاهد (12 مشهداً = أكثر من دقيقة لتحقيق الأرباح)'
         required: true
-        default: '6'
+        default: '12'
         type: choice
         options:
-          - '5'
-          - '6'
-          - '8'
+          - '10'
+          - '12'
+          - '14'
 
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - name: Checkout Repository
@@ -59,8 +60,8 @@ jobs:
           FB_PAGE_IDS: ${{ secrets.FB_PAGE_IDS }}
           IG_USER_IDS: ${{ secrets.IG_USER_IDS }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          CONTENT_TYPE: ${{ inputs.content_type }}
           CUSTOM_PROMPT: ${{ inputs.custom_prompt }}
-          AUDIO_STYLE: ${{ inputs.audio_style }}
           SCENES_COUNT: ${{ inputs.scenes_count }}
         run: |
           python main.py
