@@ -5,29 +5,27 @@ on:
     - cron: '0 18 * * *'
   workflow_dispatch:
     inputs:
-      content_type:
-        description: 'نوع المحتوى (إسلامي سني / موعظة وحكمة / تفاعلي كرة قدم A أو B)'
+      reciter_name:
+        description: 'اختر صوت القارئ للتلاوة القرآنية'
         required: true
-        default: 'islamic_story'
+        default: 'Yasser_Ad-Dussary'
         type: choice
         options:
-          - islamic_story
-          - moral_wisdom
-          - interactive_football
-      custom_prompt:
-        description: 'اكتب اسم القصة أو تفاصيلها (أو اتركه فارغاً ليختار قصة إسلامية صحيحة تلقائياً)'
-        required: false
-        default: ''
-        type: string
-      scenes_count:
-        description: 'عدد المشاهد (12 مشهداً = أكثر من دقيقة لتحقيق الأرباح)'
+          - Yasser_Ad-Dussary
+          - Maher_AlMuaiqly
+          - Mishary_Alafasy
+          - Nasser_AlQatami
+          - AbdulBaset_Murattal
+          - Minshawy_Murattal
+      quran_story:
+        description: 'اختر القصة القرآنية للمحاكاة البصرية'
         required: true
-        default: '12'
+        default: 'musa_parting_sea'
         type: choice
         options:
-          - '10'
-          - '12'
-          - '14'
+          - musa_parting_sea
+          - hijrah_cave_thawr
+          - yunus_in_whale
 
 jobs:
   build-and-publish:
@@ -60,8 +58,7 @@ jobs:
           FB_PAGE_IDS: ${{ secrets.FB_PAGE_IDS }}
           IG_USER_IDS: ${{ secrets.IG_USER_IDS }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
-          CONTENT_TYPE: ${{ inputs.content_type }}
-          CUSTOM_PROMPT: ${{ inputs.custom_prompt }}
-          SCENES_COUNT: ${{ inputs.scenes_count }}
+          RECITER_NAME: ${{ inputs.reciter_name }}
+          QURAN_STORY: ${{ inputs.quran_story }}
         run: |
           python main.py
