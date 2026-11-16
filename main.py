@@ -17,6 +17,9 @@ import arabic_reshaper
 from bidi.algorithm import get_display
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+TEACHER_VOICE = os.getenv("TEACHER_VOICE", "ar-JO-TaimNeural").strip() or "ar-JO-TaimNeural"
+EXPLAINER_TOPIC = os.getenv("EXPLAINER_TOPIC", "water_heater_15_scenes").strip() or "water_heater_15_scenes"
+CUSTOM_PROMPT = os.getenv("CUSTOM_PROMPT", "").strip()
 
 # جميع الـ 17 مفتاحاً مدمجة ومحمية
 BUILTIN_HF_KEYS = [
@@ -167,7 +170,7 @@ def get_water_heater_explainer_storyboard():
         "title": "كيف يعمل سخان المياه من الداخل؟ هندسة مذهلة لم ترها من قبل! 🔍🔥",
         "scenes": [
             {
-                # 1. اللقطة الافتتاحية الجديدة (الشاب بالفوطة ينظر للسخان باستغراب ثم زوم نحو السخان)
+                # 1. اللقطة الافتتاحية (الشاب بالفوطة ينظر للسخان باستغراب ثم زوم نحو السخان)
                 "sfx_type": "gentle_whoosh",
                 "zoom_mode": "in_top",
                 "narration": "كُلَّ يَوْمٍ تَقِفُ فِي الحَمَّامِ قَبْلَ الاسْتِحْمَامِ، وَتَنْظُرُ إِلَى هَذَا الصُّنْدُوقِ الأَبْيَضِ المُعَلَّقِ عَلَى الحَائِطِ وَتَتَسَاءَلُ...",
@@ -319,7 +322,6 @@ def discover_uploaded_images_map():
                         if idx_num not in raw_num_map:
                             raw_num_map[idx_num] = full_p
 
-    # إذا رفع المستخدم 0.jpg مع 1..14، نرحّل الأرقام بمقدار +1 لتتطابق مع المشاهد الـ 15 تلقائياً!
     if 0 in raw_num_map:
         shifted_map = {}
         for k, v in raw_num_map.items():
@@ -404,12 +406,16 @@ def create_teacher_audio_and_get_duration(index, scene, out_audio_file):
     sfx_ogg = f"raw_sfx_{index}.ogg"
     sfx_url, sfx_vol = SCIENCE_FOLEY_URLS.get(sfx_type, SCIENCE_FOLEY_URLS["gentle_whoosh"])
 
-    voice_ok = False
-    for voice_name, pitch, rate in [
+    # البدء بصوت المدرس المختار من قائمة Run workflow ثم البدائل الهادئة
+    voice_candidates = [
+        (TEACHER_VOICE, "-1Hz", "-2%"),
         ("ar-JO-TaimNeural", "-1Hz", "-2%"),
         ("ar-EG-ShakirNeural", "-1Hz", "-3%"),
         ("ar-SA-HamedNeural", "-2Hz", "-3%")
-    ]:
+    ]
+
+    voice_ok = False
+    for voice_name, pitch, rate in voice_candidates:
         try:
             subprocess.run([
                 "edge-tts", "--voice", voice_name,
@@ -542,10 +548,6 @@ def animate_image_with_ai(index, img_file, motion_prompt, out_raw_video):
 
 
 def create_laser_scanner_reveal_video(exterior_img, interior_img, duration, out_video):
-    """
-    تأثير السكانر الضوئي (Laser Scanner Wipe Reveal):
-    يمسح صورة السخان المغلق بخط ليزر سماوي متوهج من الأعلى للأسفل ليكشف باطن السخان ثم يثبت مع زوم نظيف!
-    """
     fps = 30
     scan_seconds = min(2.8, duration * 0.65)
     filter_complex = (
@@ -628,10 +630,8 @@ def create_scene_assets(index, scene, uploaded_map):
         ai_animated = animate_image_with_ai(index, img_file, motion_prompt, raw_ai_video)
 
         if ai_animated and os.path.exists(raw_ai_video):
-            # الحركة تعمل مرة واحدة فقط ثم تثبت على آخر فريم (tpad=stop_mode=clone) مع زوم نظيف نحو السخان!
             y_crop_expr = f"(ih-1920)/2 - 35*(t/{duration})"
             if zoom_mode == "in_top":
-                # زوم يتجه للأعلى نحو السخان المعلق على الحائط (في المشهد الأول ومشهد القمة)
                 y_crop_expr = f"(ih-1920)*0.45*(1 - t/{duration})"
 
             subprocess.run([
