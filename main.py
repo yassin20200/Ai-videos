@@ -6,6 +6,7 @@ import time
 import base64
 import random
 import shutil
+import urllib.parse
 import subprocess
 from pathlib import Path
 import requests
@@ -27,7 +28,6 @@ META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "").strip()
 GRAPH_API = "https://graph.facebook.com/v21.0"
 FONT_BOLD_PATH = "Montserrat-ExtraBold.ttf"
 
-# مؤثرات صوتية متزامنة مع مراحل بناء المحطة النووية
 SFX_LIBRARY = {
     "splash": ("https://actions.google.com/sounds/v1/water/water_splashing.ogg", 0.30),
     "turbine": ("https://actions.google.com/sounds/v1/science_fiction/sci_fi_osh.ogg", 0.25),
@@ -55,7 +55,6 @@ def ensure_english_font():
     return "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
-# الـ 12 مرحلة الكاملة لبناء المحطة النووية بنفس تسلسل وكاميرا الفيديو المرجعي بالضبط
 NUCLEAR_PLANT_SEGMENTS = [
     {
         "id": 0,
@@ -214,9 +213,16 @@ def build_segment_audio(seg_idx, segment, out_wav):
                 ], check=True, timeout=30, stderr=subprocess.DEVNULL)
                 if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
                     shutil.copyfile(raw_mp3, raw_voice)
+                    voice_ok = True
                     break
             except Exception:
                 time.sleep(1)
+
+    if not voice_ok:
+        encoded = urllib.parse.quote(text)
+        r = requests.get(f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q={encoded}", timeout=30)
+        with open(raw_voice, "wb") as f:
+            f.write(r.content)
 
     warm_eq = "highpass=f=80,equalizer=f=190:width_type=o:width=1.5:g=2.5,equalizer=f=3800:width_type=o:width=2.0:g=2.0"
     subprocess.run([
@@ -279,10 +285,6 @@ def lerp(a, b, t):
 
 
 class NuclearPlantRenderer:
-    """
-    محرك رسوم وتحريك برمجي (Programmatic 2.5D/3D Explainer Renderer):
-    يرسم المحطة النووية بالكامل ويتحكم في الكاميرا والفقاعات والتوربينة واللافتات ومؤشرات الحرارة في كل فريم!
-    """
     def __init__(self, font_path):
         self.font_word = ImageFont.truetype(font_path, 76)
         self.font_label = ImageFont.truetype(font_path, 30)
@@ -365,7 +367,7 @@ class NuclearPlantRenderer:
         def w2s(wx, wy):
             return self.world_to_screen(wx, wy, cam_x, cam_y, zoom)
 
-        # 1. السماء والشمس المتوهجة والسحب المتحركة
+        # 1. Sky, Sun & Clouds
         sun_x, sun_y = 870, 390
         for r_glow, a_glow in [(150, 35), (115, 65), (85, 110)]:
             draw.ellipse([(sun_x - r_glow, sun_y - r_glow), (sun_x + r_glow, sun_y + r_glow)], fill=(255, 235, 130, a_glow))
@@ -379,7 +381,7 @@ class NuclearPlantRenderer:
                 r_c = int(rad * cscale)
                 draw.ellipse([(cx + dx * cscale - r_c, cy + dy * cscale - r_c), (cx + dx * cscale + r_c, cy + dy * cscale + r_c)], fill=(248, 250, 252))
 
-        # 2. الخلفية الطبيعية (الأرض الخضراء، النهر، القارب الشراعي، الأشجار، الطريق)
+        # 2. Ground, River, Fish & Road
         _, horizon_y = w2s(0, 680)
         _, river_top = w2s(0, 740)
         _, river_bot = w2s(0, 880)
@@ -388,7 +390,6 @@ class NuclearPlantRenderer:
         draw.line([(0, int(river_top)), (1080, int(river_top))], fill=(195, 175, 135), width=max(int(6 * zoom), 3))
         draw.line([(0, int(river_bot)), (1080, int(river_bot))], fill=(145, 115, 78), width=max(int(10 * zoom), 4))
 
-        # بقعة الماء الساخن والسمك في المشهد 5 (00:36 - 00:42)
         if seg_idx in (5, 6):
             rx1, ry1 = w2s(620, 775)
             rx2, ry2 = w2s(960, 865)
@@ -403,14 +404,12 @@ class NuclearPlantRenderer:
                     draw.polygon([(fx + fw - 4, fy), (fx + fw + int(16 * zoom), fy - fh), (fx + fw + int(16 * zoom), fy + fh)], fill=fish_c, outline=(50, 60, 70))
                     draw.ellipse([fx - fw // 2 - 3, fy - 4, fx - fw // 2 + 3, fy + 2], fill=(20, 20, 20))
 
-        # قارب شراعي يتحرك بهدوء في النهر
         boat_wx = 920 - (global_time * 12.0) % 700
         bx, by = w2s(boat_wx, 815)
         bw = int(28 * zoom)
         draw.polygon([(bx - bw, by), (bx + bw, by), (bx + int(bw * 0.7), by + int(12 * zoom)), (bx - int(bw * 0.7), by + int(12 * zoom))], fill=(140, 90, 50))
         draw.polygon([(bx, by - int(48 * zoom)), (bx, by - 2), (bx + int(24 * zoom), by - 2)], fill=(250, 250, 250), outline=(80, 80, 80))
 
-        # المنصة الخرسانية للمحطة والطريق الأسفلتي
         pad_pts = [w2s(100, 920), w2s(1120, 920), w2s(1180, 1270), w2s(40, 1270)]
         draw.polygon(pad_pts, fill=(216, 210, 197), outline=(165, 158, 145))
 
@@ -421,7 +420,6 @@ class NuclearPlantRenderer:
             lx2, ly2 = w2s(135 + r_i * 145, 1266 + r_i * 11)
             draw.line([(lx1, ly1), (lx2, ly2)], fill=(245, 245, 245), width=max(int(5 * zoom), 3))
 
-        # مبنى المحطة الخلفي واللافتة
         b_tl = w2s(270, 835)
         b_br = w2s(450, 935)
         draw.rectangle([b_tl[0], b_tl[1], b_br[0], b_br[1]], fill=(228, 212, 182), outline=(120, 110, 95), width=2)
@@ -429,20 +427,19 @@ class NuclearPlantRenderer:
         sign_br = w2s(425, 825)
         draw.rounded_rectangle([sign_tl[0], sign_tl[1], sign_br[0], sign_br[1]], radius=6, fill=(40, 45, 50), outline=(245, 205, 45), width=2)
 
-        # 3. قبة الاحتواء الخرسانية والفولاذية (تظهر من المشهد 7 فصاعداً)
+        # 3. Containment Dome
         if seg_idx >= 7:
-            dome_Drop = smoothstep(seg_progress * 1.6) if seg_idx == 7 else 1.0
-            dy_off = (1.0 - dome_Drop) * -350
+            dome_drop = smoothstep(seg_progress * 1.6) if seg_idx == 7 else 1.0
+            dy_off = (1.0 - dome_drop) * -350
             d_tl = w2s(365, 740 + dy_off)
             d_br = w2s(695, 1155 + dy_off)
             draw.pieslice([d_tl[0], d_tl[1], d_br[0], d_br[1] + int(180 * zoom)], start=180, end=360, fill=(145, 150, 155), outline=(80, 85, 90), width=4)
             draw.rectangle([d_tl[0], (d_tl[1] + d_br[1]) // 2, d_br[0], d_br[1]], fill=(145, 150, 155), outline=(80, 85, 90), width=3)
-            # الجدار الخرساني السميك المحيط بالقبة
             draw.arc([d_tl[0] - int(18 * zoom), d_tl[1] - int(18 * zoom), d_br[0] + int(18 * zoom), d_br[1] + int(180 * zoom)], start=180, end=360, fill=(210, 212, 215), width=max(int(22 * zoom), 8))
             draw.rectangle([d_tl[0] - int(20 * zoom), (d_tl[1] + d_br[1]) // 2, d_tl[0], d_br[1]], fill=(210, 212, 215), outline=(110, 115, 120), width=2)
             draw.rectangle([d_br[0], (d_tl[1] + d_br[1]) // 2, d_br[0] + int(20 * zoom), d_br[1]], fill=(210, 212, 215), outline=(110, 115, 120), width=2)
 
-        # 4. تانك المفاعل الأول (Primary Reactor Vessel) + قضبان اليورانيوم + أعمدة التحكم
+        # 4. Primary Reactor Tank + Uranium Rods + Control Rods
         t1_tl = w2s(415, 865)
         t1_br = w2s(535, 1140)
         base_tl = w2s(400, 1140)
@@ -450,13 +447,11 @@ class NuclearPlantRenderer:
         draw.rectangle([base_tl[0], base_tl[1], base_br[0], base_br[1]], fill=(200, 195, 185), outline=(235, 185, 35), width=3)
         draw.rectangle([t1_tl[0], t1_tl[1], t1_br[0], t1_br[1]], fill=(230, 238, 245), outline=(130, 145, 160), width=3)
 
-        # الماء داخل تانك المفاعل (يتحول للون أخضر مشع خفيف من المشهد 4 فصاعداً)
         water_col = (125, 198, 190, 210) if seg_idx >= 4 else (115, 195, 235, 210)
         w1_tl = w2s(422, 910)
         w1_br = w2s(528, 1135)
         draw.rectangle([w1_tl[0], w1_tl[1], w1_br[0], w1_br[1]], fill=water_col)
 
-        # الونش الأصفر في المشهد 0 و 1
         if seg_idx <= 1:
             c_tl = w2s(395, 780)
             c_br = w2s(555, 1150)
@@ -464,7 +459,6 @@ class NuclearPlantRenderer:
             draw.line([(c_br[0], c_tl[1]), (c_br[0], c_br[1])], fill=(235, 185, 40), width=max(int(10 * zoom), 4))
             draw.line([(c_tl[0], c_tl[1]), (c_br[0], c_tl[1])], fill=(235, 185, 40), width=max(int(12 * zoom), 5))
 
-        # نزول قضبان اليورانيوم وتوهجها الحراري
         rod_drop = smoothstep(seg_progress * 2.2) if seg_idx == 0 else 1.0
         rod_y_top = lerp(810, 995, rod_drop)
         rod_y_bot = rod_y_top + 125
@@ -487,7 +481,6 @@ class NuclearPlantRenderer:
         draw.rectangle([cap1_tl[0], cap1_tl[1], cap1_br[0], cap1_br[1]], fill=(120, 130, 140))
         draw.rectangle([cap2_tl[0], cap2_tl[1], cap2_br[0], cap2_br[1]], fill=(120, 130, 140))
 
-        # أعمدة التحكم السوداء (Control Rods) والمغناطيس الكهربائي
         if seg_idx >= 2:
             if seg_idx == 2:
                 ctrl_depth = smoothstep((seg_progress - 0.35) * 1.8)
@@ -504,12 +497,10 @@ class NuclearPlantRenderer:
                 draw.rectangle([cx1, cy1, cx2, cy2], fill=(70, 78, 85), outline=(40, 45, 50), width=1)
 
                 if seg_idx >= 3:
-                    # ملفات المغناطيس الكهربائي الحمراء والصفراء أعلى التانك
                     mx1, my1 = w2s(440 + c_i * 26, 875)
                     mx2, my2 = w2s(458 + c_i * 26, 898)
                     draw.rectangle([mx1, my1, mx2, my2], fill=(215, 55, 45), outline=(250, 205, 50), width=2)
 
-        # فقاعات الغليان داخل تانك المفاعل
         if (seg_idx == 0 and seg_progress > 0.5) or seg_idx >= 1:
             for bx_norm, by_seed, b_rad in self.bubbles[:16]:
                 by_prog = (by_seed + global_time * 0.55) % 1.0
@@ -519,13 +510,12 @@ class NuclearPlantRenderer:
                 br = max(int(b_rad * 0.45 * zoom), 3)
                 draw.ellipse([bsx - br, bsy - br, bsx + br, bsy + br], fill=(255, 255, 255, 195))
 
-        # رموز الإشعاع النووي داخل المفاعل (من المشهد 4 فصاعداً)
         if seg_idx >= 4:
             for rad_wx, rad_wy in [(445, 960), (485, 945), (505, 980), (460, 995)]:
                 rsx, rsy = w2s(rad_wx, rad_wy + math.sin(global_time * 3 + rad_wx) * 6)
                 self.draw_radiation_symbol(draw, rsx, rsy, 7 * zoom)
 
-        # 5. التانك الثاني (Secondary Clean Water Loop) ومبادل الحرارة (من المشهد 4 فصاعداً)
+        # 5. Secondary Clean Water Loop
         if seg_idx >= 4:
             t2_tl = w2s(575, 865)
             t2_br = w2s(665, 1140)
@@ -534,28 +524,24 @@ class NuclearPlantRenderer:
             w2_br = w2s(658, 1135)
             draw.rectangle([w2_tl[0], w2_tl[1], w2_br[0], w2_br[1]], fill=(120, 198, 240, 210))
 
-            # أنابيب التبادل الحراري والربط بين التانكين
             p_hot1, p_hot2 = w2s(528, 995), w2s(585, 1012)
             p_cold1, p_cold2 = w2s(528, 1085), w2s(585, 1102)
             draw.rounded_rectangle([p_hot1[0], p_hot1[1], p_hot2[0], p_hot2[1]], radius=8, fill=(240, 105, 55))
             draw.rounded_rectangle([p_cold1[0], p_cold1[1], p_cold2[0], p_cold2[1]], radius=8, fill=(75, 165, 235))
 
-            # ملف التسخين النحاسي داخل التانك الثاني
             coil_tl, coil_br = w2s(596, 975), w2s(644, 1120)
             draw.arc([coil_tl[0], coil_tl[1], coil_br[0], coil_br[1]], start=180, end=360, fill=(235, 125, 65), width=max(int(5 * zoom), 3))
             draw.line([(coil_tl[0], (coil_tl[1] + coil_br[1]) // 2), (coil_tl[0], coil_br[1])], fill=(235, 125, 65), width=max(int(5 * zoom), 3))
             draw.line([(coil_br[0], (coil_tl[1] + coil_br[1]) // 2), (coil_br[0], coil_br[1])], fill=(235, 125, 65), width=max(int(5 * zoom), 3))
 
-            # طلمبة المياه (Pump)
             pmp_x, pmp_y = w2s(556, 1093)
             pmp_r = int(14 * zoom)
             draw.ellipse([pmp_x - pmp_r, pmp_y - pmp_r, pmp_x + pmp_r, pmp_y + pmp_r], fill=(55, 65, 75), outline=(255, 255, 255), width=2)
             if seg_idx == 8:
-                # علامة X حمراء على الطلمبة عند تعطلها في المشهد 8
                 draw.line([(pmp_x - pmp_r, pmp_y - pmp_r), (pmp_x + pmp_r, pmp_y + pmp_r)], fill=(235, 45, 45), width=4)
                 draw.line([(pmp_x + pmp_r, pmp_y - pmp_r), (pmp_x - pmp_r, pmp_y + pmp_r)], fill=(235, 45, 45), width=4)
 
-        # 6. ماسورة البخار العلوية + التوربينة الدوارة + المولد الكهربائي الأخضر + عمود الإنارة
+        # 6. Steam Pipe + Spinning Turbine + Generator + Lamp
         if seg_idx >= 1:
             pipe_src_x = 620 if seg_idx >= 4 else 475
             ps1 = w2s(pipe_src_x, 865)
@@ -565,25 +551,23 @@ class NuclearPlantRenderer:
             pw = max(int(16 * zoom), 6)
             draw.line([ps1, ps2, ps3, ps4], fill=(210, 218, 225), width=pw, joint="curve")
 
-            # التوربينة البخارية الدوارة
             tb_x, tb_y = w2s(765, 1065)
             tb_w, tb_h = int(52 * zoom), int(28 * zoom)
             draw.rectangle([tb_x - tb_w, tb_y - tb_h, tb_x + tb_w, tb_y + tb_h], fill=(165, 175, 185), outline=(90, 100, 110), width=2)
             spin_phase = global_time * 12.0
             for b_i in range(6):
-                bx_ blade = tb_x - tb_w + int((b_i + 0.5) * (2 * tb_w / 6))
-                bh_ blade = int(tb_h * (0.4 + 0.6 * abs(math.sin(spin_phase + b_i * 0.9))))
+                bx_blade = tb_x - tb_w + int((b_i + 0.5) * (2 * tb_w / 6))
+                bh_blade = int(tb_h * (0.4 + 0.6 * abs(math.sin(spin_phase + b_i * 0.9))))
                 draw.polygon([
                     (bx_blade - int(7 * zoom), tb_y - bh_blade),
                     (bx_blade + int(7 * zoom), tb_y),
                     (bx_blade - int(7 * zoom), tb_y + bh_blade)
                 ], fill=(245, 248, 252), outline=(120, 130, 140))
 
-            # المولد الكهربائي الأخضر
             gen_tl = w2s(830, 1015)
             gen_br = w2s(920, 1125)
             draw.rectangle([gen_tl[0], gen_tl[1], gen_br[0], gen_br[1]], fill=(68, 178, 142), outline=(45, 125, 98), width=3)
-            # عمود الإنارة المضيء
+
             lamp_base = w2s(965, 1140)
             lamp_top = w2s(965, 1020)
             draw.line([lamp_base, lamp_top], fill=(70, 75, 80), width=max(int(5 * zoom), 3))
@@ -591,14 +575,13 @@ class NuclearPlantRenderer:
             draw.ellipse([lamp_top[0] - lr * 2, lamp_top[1] - lr * 2, lamp_top[0] + lr * 2, lamp_top[1] + lr * 2], fill=(255, 240, 120, 95))
             draw.ellipse([lamp_top[0] - lr, lamp_top[1] - lr, lamp_top[0] + lr, lamp_top[1] + lr], fill=(255, 245, 150), outline=(120, 110, 60), width=2)
 
-        # 7. المكثف (Condenser) وأنابيب النهر وبرج التبريد العملاق (من المشهد 5 فصاعداً)
+        # 7. Condenser & Cooling Tower
         if seg_idx >= 5:
             cond_tl = w2s(760, 945)
             cond_br = w2s(835, 1005)
             draw.rectangle([cond_tl[0], cond_tl[1], cond_br[0], cond_br[1]], fill=(145, 190, 220), outline=(95, 135, 165), width=2)
 
         if seg_idx >= 6:
-            # برج التبريد المخروطي العملاق (Cooling Tower)
             ct_top_l, ct_top_r = w2s(955, 730), w2s(1065, 730)
             ct_mid_l, ct_mid_r = w2s(968, 845), w2s(1052, 845)
             ct_bot_l, ct_bot_r = w2s(930, 1025), w2s(1090, 1025)
@@ -607,14 +590,13 @@ class NuclearPlantRenderer:
             tower_col = (218, 212, 198, tower_alpha)
             draw.polygon([ct_top_l, ct_top_r, ct_mid_r, ct_bot_r, ct_bot_l, ct_mid_l], fill=tower_col, outline=(140, 135, 125))
 
-            # سحابة بخار الماء النقي H2O أعلى برج التبريد
             for s_i in range(5):
                 s_prog = (s_i * 0.2 + global_time * 0.35) % 1.0
                 sx_c, sy_c = w2s(1010 + math.sin(s_prog * 5) * 18, 720 - s_prog * 140)
                 sr = int((28 + s_prog * 38) * zoom)
                 draw.ellipse([sx_c - sr, sy_c - sr, sx_c + sr, sy_c + sr], fill=(255, 255, 255, int(210 * (1.0 - s_prog * 0.65))))
 
-        # 8. المولدات الاحتياطية الصفراء وتانك مياه الجاذبية المرتفع (من المشهد 8 فصاعداً)
+        # 8. Backup Generators & Gravity Water Tank
         if seg_idx >= 8:
             gen2_tl, gen2_br = w2s(245, 1045), w2s(325, 1135)
             draw.rectangle([gen2_tl[0], gen2_tl[1], gen2_br[0], gen2_br[1]], fill=(242, 198, 52), outline=(165, 130, 30), width=2)
@@ -624,18 +606,17 @@ class NuclearPlantRenderer:
             draw.line([(wt_br[0] - 10, wt_br[1]), leg2], fill=(95, 105, 115), width=max(int(5 * zoom), 3))
             draw.rectangle([wt_tl[0], wt_tl[1], wt_br[0], wt_br[1]], fill=(135, 195, 230), outline=(85, 135, 165), width=3)
 
-        # 9. حوض الوقود النووي المستعمل وتوهج شيرينكوف الأزرق (من المشهد 9 فصاعداً)
+        # 9. Spent Fuel Pool & Blue Cherenkov Glow
         if seg_idx >= 9:
             pool_tl, pool_br = w2s(125, 1045), w2s(235, 1155)
             draw.rectangle([pool_tl[0], pool_tl[1], pool_br[0], pool_br[1]], fill=(225, 232, 238), outline=(130, 140, 150), width=3)
             pw_tl, pw_br = w2s(133, 1060), w2s(227, 1145)
             draw.rectangle([pw_tl[0], pw_tl[1], pw_br[0], pw_br[1]], fill=(85, 185, 245, 225))
-            # إشعاع شيرينكوف الأزرق المتوهج
             cg_x, cg_y = w2s(180, 1105)
             c_rad = int(42 * zoom)
             draw.ellipse([cg_x - c_rad, cg_y - c_rad, cg_x + c_rad, cg_y + c_rad], fill=(120, 225, 255, 140))
 
-        # 10. اللافتات التوضيحية (Callout Labels) والمؤشرات الخاصة بكل مشهد
+        # 10. Callout Labels & Gauges
         if seg_idx == 0:
             self.draw_callout(draw, 475, 1045, 675, 965, "URANIUM FUEL", (215, 135, 45), cam_x, cam_y, zoom)
             self.draw_callout(draw, 425, 1090, 260, 1140, "WATER TANK", (105, 165, 205), cam_x, cam_y, zoom)
@@ -672,27 +653,23 @@ class NuclearPlantRenderer:
         elif seg_idx == 9:
             self.draw_callout(draw, 180, 1100, 340, 990, "SPENT FUEL POOL", (65, 155, 225), cam_x, cam_y, zoom)
         elif seg_idx == 10:
-            # بطاقة المقارنة: حبة وقود يورانيوم واحدة = طن فحم كامل!
             c_box = [130, 1150, 950, 1640]
             draw.rounded_rectangle(c_box, radius=32, fill=(250, 246, 235), outline=(45, 55, 65), width=5)
-            # حبة اليورانيوم + الدب الجيلي
             draw.rounded_rectangle([240, 1330, 305, 1415], radius=12, fill=(125, 135, 145), outline=(40, 45, 50), width=4)
             draw.ellipse([345, 1320, 405, 1375], fill=(235, 65, 55), outline=(140, 30, 25), width=3)
             draw.rounded_rectangle([340, 1355, 410, 1415], radius=18, fill=(235, 65, 55), outline=(140, 30, 25), width=3)
             draw.text((205, 1465), "1 FUEL PELLET", font=self.font_card, fill=(40, 45, 50))
             draw.text((515, 1340), "=", font=self.font_word, fill=(235, 165, 40))
-            # كومة طن الفحم
             for cx_c, cy_c in [(690, 1395), (745, 1395), (800, 1395), (715, 1350), (770, 1350), (742, 1305)]:
                 draw.regular_polygon((cx_c, cy_c, 34), n_sides=6, fill=(55, 60, 65), outline=(25, 30, 35))
             draw.text((645, 1465), "1 TON OF COAL", font=self.font_card, fill=(40, 45, 50))
         elif seg_idx == 11:
-            # قصاصات الاحتفال الملونة (Confetti) في المشهد الختامي
             for c_x, c_y0, c_s, c_col in self.confetti:
                 cy_now = (c_y0 + seg_progress * 950) % 1920
                 cx_now = c_x + math.sin(global_time * 5 + c_x) * 18
                 draw.rectangle([cx_now - c_s, cy_now - c_s * 1.6, cx_now + c_s, cy_now + c_s * 1.6], fill=c_col)
 
-        # 11. الكابشن العلوي كلمة بكلمة (Word-by-Word Pop-in Top Center Caption) مثل الفيديو الأصلي بالضبط!
+        # 11. Top Center Word-by-Word Pop Caption
         if current_word:
             w_text = current_word.upper()
             bbox = draw.textbbox((0, 0), w_text, font=self.font_word)
@@ -836,7 +813,6 @@ def assemble_and_publish():
     ffmpeg_proc.wait()
 
     final_video = "final_short.mp4"
-    # إضافة خلفية صوتية خفيفة جداً وناعمة تدمج الصوت والمؤثرات باحترافية
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
         "-i", raw_video,
