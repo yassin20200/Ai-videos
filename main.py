@@ -1,52 +1,21 @@
 import os
 import re
+import math
 import json
 import time
+import base64
+import random
 import shutil
-import urllib.parse
 import subprocess
 from pathlib import Path
 import requests
-import httpx
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from gradio_client import Client, handle_file
-from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
-import arabic_reshaper
-from bidi.algorithm import get_display
+from PIL import Image, ImageDraw, ImageFont
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-TEACHER_VOICE = os.getenv("TEACHER_VOICE", "ar-JO-TaimNeural").strip() or "ar-JO-TaimNeural"
-EXPLAINER_TOPIC = os.getenv("EXPLAINER_TOPIC", "water_heater_15_scenes").strip() or "water_heater_15_scenes"
-CUSTOM_PROMPT = os.getenv("CUSTOM_PROMPT", "").strip()
-
-# جميع الـ 17 مفتاحاً مدمجة ومحمية
-BUILTIN_HF_KEYS = [
-    "hf_" + "NBRGGfSCxBBaMIFPJkoNLQdXCOcmlJXqYb",  # 1
-    "hf_" + "MosLqeuvHIfLlAubsWYiuTuwSnhYnZgNPE",  # 2
-    "hf_" + "qSzduYHOeviXuzzZxJUmIDJZKRayYczBDz",  # 3
-    "hf_" + "itfBMakTLBTCSuyWzVgllHLSqKHAhlhvWg",  # 4
-    "hf_" + "aSSeTMqDdyDRuCsSwHbOiYoARjxDTjsNKA",  # 5
-    "hf_" + "sWDbCVpLrNBEviMNJCPoxuFxmkvsHHtXXf",  # 6
-    "hf_" + "uEpYvOFeenkhKZAVtxxQJhCtBwtIiVzfSl",  # 7
-    "hf_" + "DtzJsngMHItHpmKTgcKlhPuqYNZCfRuDLP",  # 8
-    "hf_" + "WeCDcvxhuUmLuOuUuiNXjlfhQUuFRfqWSg",  # 9
-    "hf_" + "wXFmObaSoVYvykpWxHoHrOVsCJhhRPhdLR",  # 10
-    "hf_" + "tXLZiRQsOsbnoxIARVOPkszECLjKyOXHFN",  # 11
-    "hf_" + "wAIKxULbTILnnleYUvznXZfjMDsJAcWWaV",  # 12
-    "hf_" + "xQFHygbLwqIRmUVPonhLDnyPEgWFKJUjDD",  # 13
-    "hf_" + "oTFgbajxGfeVCdfwEXqfIQTSpmKFYHUDey",  # 14
-    "hf_" + "jMELzdxWgnofnvwBKdvzEEIgwZtilPSXgI",  # 15
-    "hf_" + "LVKDmdIxuWHReiQYbzKjqWySkryZMgrJir",  # 16
-    "hf_" + "ZoaZszyOKKucYlXXIYrQjvWIkFbOuTPUja",  # 17
-]
-
-RAW_ENV_TOKENS = [t.strip() for t in os.getenv("HF_TOKEN", "").replace("\n", ",").replace(" ", ",").split(",") if t.strip()]
-HF_TOKENS = []
-for token_item in BUILTIN_HF_KEYS + RAW_ENV_TOKENS:
-    if token_item and token_item not in HF_TOKENS:
-        HF_TOKENS.append(token_item)
+ENGLISH_VOICE = os.getenv("ENGLISH_VOICE", "en-US-AndrewMultilingualNeural").strip() or "en-US-AndrewMultilingualNeural"
 
 YT_CLIENT_ID = os.getenv("YT_CLIENT_ID", "").strip()
 YT_CLIENT_SECRET = os.getenv("YT_CLIENT_SECRET", "").strip()
@@ -56,395 +25,221 @@ FB_PAGE_IDS = [p.strip() for p in os.getenv("FB_PAGE_IDS", "").split(",") if p.s
 META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "").strip()
 
 GRAPH_API = "https://graph.facebook.com/v21.0"
-FONT_PATH = "Cairo-Black.ttf"
-CHARACTER_MASTER_SEED = 888999
+FONT_BOLD_PATH = "Montserrat-ExtraBold.ttf"
 
-os.environ.pop("HF_TOKEN", None)
-EXHAUSTED_ZEROGPU_TOKENS = set()
-
-ARABIC_RESHAPER = arabic_reshaper.ArabicReshaper(configuration={
-    "delete_harakat": True,
-    "support_ligatures": False
-})
-
-SCIENCE_FOLEY_URLS = {
-    "scanner_sweep": ("https://actions.google.com/sounds/v1/science_fiction/sci_fi_osh.ogg", 0.28),
-    "water_flow": ("https://actions.google.com/sounds/v1/water/air_woosh_underwater.ogg", 0.22),
-    "bubbles_heat": ("https://actions.google.com/sounds/v1/water/water_splashing.ogg", 0.18),
-    "soft_click": ("https://actions.google.com/sounds/v1/cartoon/pop.ogg", 0.20),
-    "gentle_whoosh": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.18)
+# مؤثرات صوتية متزامنة مع مراحل بناء المحطة النووية
+SFX_LIBRARY = {
+    "splash": ("https://actions.google.com/sounds/v1/water/water_splashing.ogg", 0.30),
+    "turbine": ("https://actions.google.com/sounds/v1/science_fiction/sci_fi_osh.ogg", 0.25),
+    "alarm": ("https://actions.google.com/sounds/v1/alarms/beep_short.ogg", 0.30),
+    "clunk": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.35),
+    "whoosh": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.28),
+    "bubbles": ("https://actions.google.com/sounds/v1/water/air_woosh_underwater.ogg", 0.28),
+    "pop": ("https://actions.google.com/sounds/v1/cartoon/pop.ogg", 0.30),
+    "cheer": ("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg", 0.30)
 }
 
 
-class PinnedSpace:
-    def __init__(self, space_id, token=None):
-        sub = space_id.replace("/", "-").replace("_", "-").replace(".", "-").lower()
-        self.base = f"https://{sub}.hf.space"
-        headers = {"Authorization": f"Bearer {token}"} if token else {}
-        self.http = httpx.Client(http2=True, timeout=600, follow_redirects=True, headers=headers)
-        r = self.http.get(self.base + "/config")
-        r.raise_for_status()
-        self.cfg = r.json()
-        self.api = self.cfg.get("api_prefix", "/gradio_api")
-
-    def upload(self, path):
-        with open(path, "rb") as f:
-            r = self.http.post(self.base + self.api + "/upload", files={"files": (Path(path).name, f)})
-            r.raise_for_status()
-        return {"path": r.json()[0], "meta": {"_type": "gradio.FileData"}}
-
-    def call(self, api_name, data):
-        clean_target = api_name.lstrip("/")
-        fn = next(
-            d.get("id", i)
-            for i, d in enumerate(self.cfg.get("dependencies", []))
-            if str(d.get("api_name", "")).lstrip("/") == clean_target
-        )
-        session = f"pin{int(time.time() * 1000)}"
-        join_res = self.http.post(
-            self.base + self.api + "/queue/join",
-            json={"data": data, "fn_index": fn, "event_data": None, "trigger_id": None, "session_hash": session}
-        )
-        join_res.raise_for_status()
-        with self.http.stream("GET", self.base + self.api + "/queue/data", params={"session_hash": session}) as s:
-            for line in s.iter_lines():
-                if not line.startswith("data:"):
-                    continue
-                msg = json.loads(line[5:])
-                if msg.get("msg") == "unexpected_error":
-                    raise RuntimeError(msg.get("message"))
-                if msg.get("msg") == "process_completed":
-                    if not msg.get("success"):
-                        raise RuntimeError(str(msg.get("output"))[:300])
-                    return msg["output"]["data"]
-        raise RuntimeError("انتهى الاتصال دون استلام الفيديو")
-
-    def download_video(self, output_data, dst):
-        def find_url_or_path(obj):
-            if isinstance(obj, dict):
-                if "url" in obj and obj["url"]:
-                    return obj["url"]
-                if "video" in obj and isinstance(obj["video"], dict) and obj["video"].get("url"):
-                    return obj["video"]["url"]
-                if "path" in obj and obj["path"]:
-                    return f"{self.base}{self.api}/file={obj['path']}"
-            if isinstance(obj, (list, tuple)):
-                for item in obj:
-                    u = find_url_or_path(item)
-                    if u:
-                        return u
-            return None
-
-        file_url = find_url_or_path(output_data)
-        if not file_url:
-            raise RuntimeError(f"لم يتم العثور على رابط الفيديو: {output_data}")
-        content = self.http.get(file_url).content
-        if len(content) < 10000:
-            raise RuntimeError("ملف الفيديو المحمل صغير جداً")
-        Path(dst).write_bytes(content)
-
-
-def ensure_arabic_font():
-    if os.path.exists(FONT_PATH) and os.path.getsize(FONT_PATH) > 10000:
-        return FONT_PATH
+def ensure_english_font():
+    if os.path.exists(FONT_BOLD_PATH) and os.path.getsize(FONT_BOLD_PATH) > 10000:
+        return FONT_BOLD_PATH
     try:
-        url = "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Black.ttf"
+        url = "https://github.com/google/fonts/raw/main/ofl/montserrat/static/Montserrat-ExtraBold.ttf"
         r = requests.get(url, timeout=30)
         if r.ok:
-            with open(FONT_PATH, "wb") as f:
+            with open(FONT_BOLD_PATH, "wb") as f:
                 f.write(r.content)
-            return FONT_PATH
+            return FONT_BOLD_PATH
     except Exception:
         pass
     return "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
-def get_water_heater_explainer_storyboard():
-    """
-    15 مشهداً متكاملاً:
-    تبدأ بلقطة الشاب الواقف في الحمام بالفوطة وينظر للسخان باستغراب -> زوم نظيف على السخان -> مسح ضوئي بالسكانر -> شرح كل جزء بالداخل.
-    """
-    style = "Photorealistic 3D engineering cutaway render, Unreal Engine 5 studio lighting, ultra-clean 8k scientific visualization, vertical 9:16, no text labels, no watermarks. "
-
-    return {
-        "title": "كيف يعمل سخان المياه من الداخل؟ هندسة مذهلة لم ترها من قبل! 🔍🔥",
-        "scenes": [
-            {
-                # 1. اللقطة الافتتاحية (الشاب بالفوطة ينظر للسخان باستغراب ثم زوم نحو السخان)
-                "sfx_type": "gentle_whoosh",
-                "zoom_mode": "in_top",
-                "narration": "كُلَّ يَوْمٍ تَقِفُ فِي الحَمَّامِ قَبْلَ الاسْتِحْمَامِ، وَتَنْظُرُ إِلَى هَذَا الصُّنْدُوقِ الأَبْيَضِ المُعَلَّقِ عَلَى الحَائِطِ وَتَتَسَاءَلُ...",
-                "image_prompt": (
-                    f"{style}A stylized 3D young man (seen from a 3/4 back-side angle, wearing a clean white bath towel wrapped around his waist) "
-                    f"standing in a modern dark-grey tiled bathroom looking up in curiosity with one hand on his chin at a sleek white cylindrical electric water heater mounted high on the wall."
-                ),
-                "motion_prompt": "3D animation, the young man in the white towel tilts his head curiously looking up at the white water heater on the wall as the camera smoothly zooms in toward the water heater, no talking"
-            },
-            {
-                # 2. زوم كامل على السخان المغلق من الخارج
-                "sfx_type": "soft_click",
-                "zoom_mode": "in_center",
-                "narration": "كَيْفَ يَخْرُجُ المَاءُ السَّاخِنُ فَوْراً بِمُجَرَّدِ فَتْحِ الصُّنْبُورِ، دُونَ أَنْ يَخْتَلِطَ بِالمَاءِ البَارِدِ دَاخِلَ السَّخَّانِ؟",
-                "image_prompt": f"{style}A sleek modern white cylindrical electric water heater mounted on a clean dark-grey modern tiled bathroom wall, with a blue cold-water inlet pipe on the bottom right and a red hot-water outlet pipe on the bottom left.",
-                "motion_prompt": "Ultra-clean 3D product animation, subtle smooth camera push-in toward the sleek white water heater mounted on the wall, static object, no distortion"
-            },
-            {
-                # 3. المسح الضوئي بالسكانر وكشف باطن السخان (يمسح اللقطة 2 ليكشف اللقطة 3)
-                "sfx_type": "scanner_sweep",
-                "zoom_mode": "scanner_reveal",
-                "narration": "لَوْ فَتَحْنَا هَذِهِ الأُسْطُوَانَةَ المُغْلَقَةَ بِمَسْحٍ ضَوْئِيٍّ مِنَ الدَّاخِلِ، سَنَكْتَشِفُ هَنْدَسَةً ذَكِيَّةً جِدّاً تَعْتَمِدُ عَلَى قَوَانِينِ الفِيزْيَاءِ البَسِيطَةِ.",
-                "image_prompt": f"{style}3D X-ray scanner cutaway of the exact same white cylindrical water heater on the grey tiled wall: a glowing cyan laser scanner beam sweeps across, making the outer shell semi-transparent and revealing the internal steel tank, yellow foam insulation, and copper heating element.",
-                "motion_prompt": "3D engineering visualization, glowing cyan scanner light gently illuminates the transparent cutaway interior of the water heater, no morphing"
-            },
-            {
-                # 4. طبقة العزل الحراري الفوم
-                "sfx_type": "soft_click",
-                "zoom_mode": "in_center",
-                "narration": "أَوَّلُ مَا يُقَابِلُنَا تَحْتَ الغِلافِ الخَارِجِيِّ هُوَ طَبَقَةٌ سَمِيكَةٌ مِنْ فُومِ العَزْلِ الحَرَارِيِّ، تَحْفَظُ حَرَارَةَ المَاءِ لِسَاعَاتٍ طَوِيلَةٍ كَأَنَّهَا حَافِظَةٌ حَرَارِيَّةٌ عِمْلَاقَةٌ.",
-                "image_prompt": f"{style}Close-up 3D cross-section of the water heater wall clearly showing the thick dense yellow polyurethane thermal insulation foam layer sandwiched between the white outer metal shell and the inner steel tank.",
-                "motion_prompt": "Clean 3D macro visualization, smooth camera focus on the yellow thermal insulation foam layer between the steel walls, no distortion"
-            },
-            {
-                # 5. دخول الماء البارد من الأسفل
-                "sfx_type": "water_flow",
-                "zoom_mode": "in_bottom",
-                "narration": "تَبْدَأُ الرِّحْلَةُ مِنَ الأَسْفَلِ؛ حَيْثُ يَدْخُلُ المَاءُ البَارِدُ عَبْرَ المَاسُورَةِ الزَّرْقَاءِ مُنْدَفِعاً بِضَغْطِ شَبَكَةِ المِيَاهِ فِي المَنْزِلِ.",
-                "image_prompt": f"{style}Close-up 3D cutaway of the bottom-right cold water inlet pipe: crystal-clear glowing blue cold water flowing upward through the chrome pipe with the blue valve into the bottom of the water heater.",
-                "motion_prompt": "3D fluid simulation, glowing blue cold water flowing smoothly upward through the transparent inlet pipe into the tank"
-            },
-            {
-                # 6. توجيه الماء البارد لقاع الخزان
-                "sfx_type": "water_flow",
-                "zoom_mode": "out_center",
-                "narration": "وَهُنَا تَكْمُنُ الخُدْعَةُ الهَنْدَسِيَّةُ الأُولَى؛ المَاءُ البَارِدُ لا يَنْتَشِرُ عَشْوَائِيّاً، بَلْ يُوَجَّهُ مُبَاشَرَةً لِيَسْتَقِرَّ فِي أَعْمَقِ نُقْطَةٍ فِي قَاعِ الخَزَّانِ.",
-                "image_prompt": f"{style}Interior 3D cutaway view of the lower half of the water heater tank: glowing clear blue cold water pouring from the inlet tube and settling densely across the bottom floor of the inner steel tank.",
-                "motion_prompt": "3D fluid animation, clear blue cold water streaming gently into the bottom floor of the tank in smooth slow motion"
-            },
-            {
-                # 7. تجمع الماء البارد حول الهيتر النحاسي
-                "sfx_type": "water_flow",
-                "zoom_mode": "in_center",
-                "narration": "فِي قَاعِ الخَزَّانِ تَمَاماً، يَتَجَمَّعُ هَذَا المَاءُ البَارِدُ الكَثِيفُ حَوْلَ قَلْبِ السَّخَّانِ النَّابِضِ، وَهُوَ عُنْصُرُ التَّسْخِينِ النُّحَاسِيُّ.",
-                "image_prompt": f"{style}Close-up 3D interior shot at the bottom of the tank: the U-shaped metallic copper heating element submerged inside the clear blue cold water at the bottom of the tank.",
-                "motion_prompt": "3D underwater engineering shot, gentle water refraction around the metallic copper heating element at the bottom of the tank"
-            },
-            {
-                # 8. حساس الترموستات الذكي
-                "sfx_type": "soft_click",
-                "zoom_mode": "in_center",
-                "narration": "بِجِوَارِهِ يَعْمَلُ التِّرْمُوسْتَاتُ كَعَقْلٍ ذَكِيٍّ لِلسَّخَّانِ؛ فَبِمُجَرَّدِ أَنْ يَسْتَشْعِرَ بُرُودَةَ المَاءِ فِي القَاعِ، يُرْسِلُ إِشَارَةً كَهْرَبَائِيَّةً فَوْرِيَّةً لِبَدْءِ التَّسْخِينِ.",
-                "image_prompt": f"{style}Macro close-up 3D shot of the electronic thermostat control unit mounted at the base of the heating element, with a glowing blue electric pulse light traveling through the sensor wires.",
-                "motion_prompt": "3D macro animation, a glowing blue electrical pulse illuminates the thermostat sensor circuit smoothly"
-            },
-            {
-                # 9. توهج الهيتر النحاسي وتسخين الماء
-                "sfx_type": "bubbles_heat",
-                "zoom_mode": "in_center",
-                "narration": "عِنْدَهَا يَتَوَهَّجُ مِلَفُّ التَّسْخِينِ النُّحَاسِيُّ بِالحَرَارَةِ، وَيُحَوِّلُ الطَّاقَةَ الكَهْرَبَائِيَّةَ إِلَى حَرَارَةٍ تَنْتَقِلُ مُبَاشَرَةً إِلَى المِيَاهِ المُحِيطَةِ بِهِ.",
-                "image_prompt": f"{style}Dramatic close-up 3D interior shot: the U-shaped copper heating element submerged in water is glowing bright fiery orange-red with heat, surrounded by tiny shimmering micro-bubbles rising in the water.",
-                "motion_prompt": "3D thermal animation, the copper heating element glows warm orange-red as tiny shimmering heat bubbles rise gently upward in the water"
-            },
-            {
-                # 10. فيزياء الكثافة وصعود الماء الساخن للأعلى
-                "sfx_type": "water_flow",
-                "zoom_mode": "out_center",
-                "narration": "وَهُنَا تَتَدَخَّلُ الفِيزْيَاءُ؛ المَاءُ السَّاخِنُ تَقِلُّ كَثَافَتُهُ وَيُصْبِحُ أَخَفَّ وَزْناً، فَيَرْتَفِعُ تِلْقَائِيّاً إِلَى قِمَّةِ الخَزَّانِ، بَيْنَمَا يَبْقَى المَاءُ البَارِدُ الثَّقِيلُ فِي الأَسْفَلِ.",
-                "image_prompt": f"{style}Full 3D tank cutaway view showing thermal fluid dynamics: glowing warm orange-red heated water rising in smooth currents to the top half of the tank, while cool blue water remains at the bottom half.",
-                "motion_prompt": "3D thermal fluid simulation, warm orange currents rise smoothly toward the top of the tank while cool blue water stays at the bottom"
-            },
-            {
-                # 11. عمود المغنيسيوم لحماية السخان من الصدأ
-                "sfx_type": "gentle_whoosh",
-                "zoom_mode": "in_center",
-                "narration": "وَلِحِمَايَةِ الخَزَّانِ الحَدِيدِيِّ مِنَ الصَّدَأِ وَتَرَاكُمِ الأَمْلاحِ، يُوجَدُ فِي المُنْتَصَفِ عَمُودُ المَغْنِيسْيُومِ، وَهُوَ جُنْدِيٌّ مَجْهُولٌ يَجْذِبُ التَّآكُلَ إِلَيْهِ بَدَلاً مِنْ جُدْرَانِ السَّخَّانِ.",
-                "image_prompt": f"{style}Close-up 3D interior shot of the center of the tank: a long silver metallic magnesium anode rod hanging vertically inside the glowing water, attracting tiny golden mineral particles toward itself.",
-                "motion_prompt": "3D scientific animation, tiny glowing mineral particles drift gently toward the silver vertical anode rod in the center of the water tank"
-            },
-            {
-                # 12. فصل الترموستات تلقائياً عند 60 درجة
-                "sfx_type": "soft_click",
-                "zoom_mode": "in_center",
-                "narration": "وَعِنْدَمَا تَصِلُ حَرَارَةُ المِيَاهِ إِلَى سِتِّينَ دَرَجَةً مِئَوِيَّةً، يَفْصِلُ التِّرْمُوسْتَاتُ الكَهْرَبَاءَ تِلْقَائِيّاً لِلحِفَاظِ عَلَى الأَمَانِ وَتَوْفِيرِ اسْتِهْلَاكِ الطَّاقَةِ.",
-                "image_prompt": f"{style}Close-up 3D shot of the front digital temperature display of the water heater showing a glowing 60 with a green safety indicator light.",
-                "motion_prompt": "Clean 3D close-up animation, the digital display glows steadily with a soft green safety indicator light"
-            },
-            {
-                # 13. صمام الأمان وتفريغ الضغط الزائد
-                "sfx_type": "gentle_whoosh",
-                "zoom_mode": "in_center",
-                "narration": "أَمَّا لَوْ زَادَ الضَّغْطُ أَوِ الحَرَارَةُ لأَيِّ سَبَبٍ طَارِئٍ، يَتَدَخَّلُ صِمَامُ الأَمَانِ لِفَتْحِ مَسَارٍ لِتَفْرِيغِ الضَّغْطِ الزَّائِدِ فَوْراً وَمَنْعِ أَيِّ خَطَرٍ.",
-                "image_prompt": f"{style}Close-up 3D shot of the brass pressure relief safety valve on the water heater pipe releasing a gentle puff of white steam and water droplets to relieve excess pressure.",
-                "motion_prompt": "3D engineering animation, a gentle wisp of white steam releases smoothly from the brass safety valve"
-            },
-            {
-                # 14. سحب الماء الساخن من قمة الخزان
-                "sfx_type": "water_flow",
-                "zoom_mode": "in_top",
-                "narration": "وَفِي اللَّحْظَةِ الَّتِي تَفْتَحُ فِيهَا صُنْبُورَ المَاءِ السَّاخِنِ، يُسْحَبُ المَاءُ مِنْ أَعْلَى نُقْطَةٍ فِي قِمَّةِ الخَزَّانِ، لِيَنْزِلَ عَبْرَ المَاسُورَةِ الحَمْرَاءِ إِلَيْكَ مُبَاشَرَةً.",
-                "image_prompt": f"{style}Interior 3D cutaway shot of the top dome of the tank: glowing warm orange-red hot water at the very top entering the upper opening of the vertical hot-water outlet pipe and flowing downward.",
-                "motion_prompt": "3D fluid simulation, warm glowing orange-red hot water flows smoothly into the top outlet pipe and travels downward"
-            },
-            {
-                # 15. الدورة المستمرة المتكاملة للسخان
-                "sfx_type": "scanner_sweep",
-                "zoom_mode": "out_center",
-                "narration": "وَفِي نَفْسِ اللَّحْظَةِ يَدْخُلُ مَاءٌ بَارِدٌ جَدِيدٌ إِلَى القَاعِ لِيُعِيدَ الدَّوْرَةَ مِنْ جَدِيدٍ؛ هَنْدَسَةٌ بَسِيطَةٌ، لَكِنَّهَا تَعْمَلُ بِدِقَّةٍ مُذْهِلَةٍ فِي كُلِّ يَوْمٍ.",
-                "image_prompt": f"{style}Wide masterpiece 3D shot of the water heater on the grey tiled wall: half sleek white exterior shell and half crystal-clear X-ray cutaway showing blue cold water entering at the bottom and warm orange-red hot water exiting the left red pipe.",
-                "motion_prompt": "Masterpiece 3D engineering visualization, smooth slow camera pull-back showing the complete harmonious water circulation inside the half-cutaway water heater"
-            }
-        ]
+# الـ 12 مرحلة الكاملة لبناء المحطة النووية بنفس تسلسل وكاميرا الفيديو المرجعي بالضبط
+NUCLEAR_PLANT_SEGMENTS = [
+    {
+        "id": 0,
+        "sfx": "splash",
+        "cam_start": (500, 980, 1.35),
+        "cam_end": (500, 1020, 1.65),
+        "narration": "If you drop uranium into a tank of water, the uranium gets hot, and just like that, you have a nuclear reactor."
+    },
+    {
+        "id": 1,
+        "sfx": "turbine",
+        "cam_start": (500, 1020, 1.65),
+        "cam_end": (630, 1040, 1.25),
+        "narration": "But hot water alone doesn't make electricity. So you seal the tank, let it boil, and use the steam to spin a turbine connected to a power generator."
+    },
+    {
+        "id": 2,
+        "sfx": "alarm",
+        "cam_start": (630, 1040, 1.25),
+        "cam_end": (480, 1030, 1.75),
+        "narration": "The problem is, uranium keeps getting hotter and hotter. So you slide control rods between the fuel to absorb the reaction and cool it down."
+    },
+    {
+        "id": 3,
+        "sfx": "clunk",
+        "cam_start": (480, 1030, 1.75),
+        "cam_end": (480, 1000, 1.55),
+        "narration": "In an emergency, you need to stop it instantly. So you hang the rods above the core on electromagnets. If the power cuts out, gravity drops them right in."
+    },
+    {
+        "id": 4,
+        "sfx": "bubbles",
+        "cam_start": (480, 1000, 1.55),
+        "cam_end": (580, 1020, 1.30),
+        "narration": "However, the water touching the uranium becomes radioactive, and right now it's spinning your turbine. So you seal it inside its own closed loop, and use its heat to boil clean water in a second loop."
+    },
+    {
+        "id": 5,
+        "sfx": "splash",
+        "cam_start": (580, 1020, 1.30),
+        "cam_end": (780, 920, 1.40),
+        "narration": "Next, you need to condense the steam back into water to reuse it. You can cool it with water from a river, but the river heats up so much it could literally cook the fish."
+    },
+    {
+        "id": 6,
+        "sfx": "whoosh",
+        "cam_start": (780, 920, 1.40),
+        "cam_end": (980, 920, 1.35),
+        "narration": "So instead, you build a giant cooling tower. Hot water rains down inside, rising air carries the heat away, and that white cloud on top is just pure water vapor."
+    },
+    {
+        "id": 7,
+        "sfx": "clunk",
+        "cam_start": (980, 920, 1.35),
+        "cam_end": (560, 1000, 1.25),
+        "narration": "Still, if anything leaks, radiation could escape. So you surround the reactor with a massive steel and concrete containment dome over a meter thick."
+    },
+    {
+        "id": 8,
+        "sfx": "alarm",
+        "cam_start": (560, 1000, 1.25),
+        "cam_end": (420, 1020, 1.20),
+        "narration": "But if the water pumps fail, the core will still overheat. So you add backup diesel generators, and an elevated water tank that floods the core using gravity alone."
+    },
+    {
+        "id": 9,
+        "sfx": "bubbles",
+        "cam_start": (420, 1020, 1.20),
+        "cam_end": (210, 1080, 1.65),
+        "narration": "Even used nuclear fuel stays hot for years, so you submerge it in a deep water pool where it glows bright blue."
+    },
+    {
+        "id": 10,
+        "sfx": "pop",
+        "cam_start": (210, 1080, 1.65),
+        "cam_end": (210, 1120, 1.55),
+        "narration": "Just one tiny uranium fuel pellet, the size of a gummy bear, produces as much electricity as an entire ton of coal."
+    },
+    {
+        "id": 11,
+        "sfx": "cheer",
+        "cam_start": (210, 1120, 1.55),
+        "cam_end": (600, 980, 0.92),
+        "narration": "And congratulations! You just built a complete nuclear power plant."
     }
+]
 
 
-def discover_uploaded_images_map():
-    """
-    يكتشف الصور المرفوعة بذكاء:
-    - إذا وجد الصورة 0.jpg (أي أن المستخدم سمى لقطة الشاب 0.jpg وباقي الصور 1.jpg..14.jpg)، يرتبها من 0 إلى 14!
-    - وإذا سمى المستخدم الصور من 1.jpg إلى 15.jpg، يرتبها من 1 إلى 15!
-    """
-    valid_exts = (".jpg", ".jpeg", ".png", ".webp", ".jfif")
-    ignore_prefixes = ("scene_", "temp_", "sub_", "base_", "raw_", "scanner_")
-    raw_num_map = {}
+def generate_gemini_english_human_tts(narration_text, dst_wav):
+    if not GEMINI_API_KEY:
+        return False
 
-    for root_dir in [".", "images", "scenes"]:
-        if not os.path.exists(root_dir):
-            continue
-        for fname in os.listdir(root_dir):
-            low = fname.lower()
-            if low.endswith(valid_exts) and not low.startswith(ignore_prefixes):
-                full_p = os.path.join(root_dir, fname)
-                if os.path.isfile(full_p) and os.path.getsize(full_p) > 4000:
-                    trans = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
-                    normalized = fname.translate(trans)
-                    nums = re.findall(r"\d+", normalized)
-                    if nums:
-                        idx_num = int(nums[0])
-                        if idx_num not in raw_num_map:
-                            raw_num_map[idx_num] = full_p
+    tts_models = ["gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts"]
+    director_prompt = (
+        "Speak as an engaging, clear, upbeat American science explainer YouTuber (like Zack D. Films or Kurzgesagt), "
+        "with natural human rhythm and enthusiasm:\n"
+        f"{narration_text}"
+    )
 
-    if 0 in raw_num_map:
-        shifted_map = {}
-        for k, v in raw_num_map.items():
-            shifted_map[k + 1] = v
-        return shifted_map
-
-    return raw_num_map
-
-
-def save_clean_engineering_image(src_path, dst_file):
-    img = Image.open(src_path).convert("RGB")
-    img = img.resize((1080, 1920), Image.Resampling.LANCZOS)
-    img = ImageEnhance.Contrast(img).enhance(1.04)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=110, threshold=3))
-    img.save(dst_file, "JPEG", quality=98)
-
-
-def is_quota_error(err_text):
-    t = str(err_text).lower()
-    return "zerogpu" in t or "exceeded" in t or "quota" in t or "runs limit" in t
-
-
-def obtain_scene_image(index, image_prompt, img_file, uploaded_map):
-    scene_num = index + 1
-    if scene_num in uploaded_map:
-        src = uploaded_map[scene_num]
-        save_clean_engineering_image(src, img_file)
-        print(f"📸 تم استخدام صورتك المرفوعة للمشهد {scene_num}: ({src})!", flush=True)
-        return
-
-    image_pool = HF_TOKENS[7:] + HF_TOKENS[:7] + [None]
-    for space_name, steps in [("black-forest-labs/FLUX.1-dev", 24), ("black-forest-labs/FLUX.1-schnell", 4)]:
-        for tok in image_pool:
-            tok_key = "SERVER_IP" if tok is None else f"TOK_{tok[:12]}"
-            if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
-                continue
-            quota_label = "IP السيرفر المجاني" if tok is None else f"مفتاح HF ({tok[:10]}...)"
-            try:
-                client = Client(space_name, token=tok, verbose=False)
-                if "dev" in space_name:
-                    res = client.predict(
-                        prompt=image_prompt,
-                        seed=CHARACTER_MASTER_SEED,
-                        randomize_seed=False,
-                        width=1024,
-                        height=1792,
-                        guidance_scale=3.5,
-                        num_inference_steps=steps,
-                        api_name="/infer"
-                    )
-                else:
-                    res = client.predict(
-                        prompt=image_prompt,
-                        seed=CHARACTER_MASTER_SEED,
-                        randomize_seed=False,
-                        width=1024,
-                        height=1792,
-                        num_inference_steps=steps,
-                        api_name="/infer"
-                    )
-                img_path = res[0] if isinstance(res, (list, tuple)) else res
-                if isinstance(img_path, dict) and "path" in img_path:
-                    img_path = img_path["path"]
-                if isinstance(img_path, str) and os.path.exists(img_path):
-                    save_clean_engineering_image(img_path, img_file)
-                    print(f"✨ تم تصميم صورة المشهد {scene_num} عبر ({space_name} - {quota_label})!", flush=True)
-                    return
-            except Exception as e:
-                if is_quota_error(e):
-                    EXHAUSTED_ZEROGPU_TOKENS.add(tok_key)
-                    continue
-                break
-
-    raise RuntimeError(f"تعذر تجهيز صورة للمشهد {scene_num}")
-
-
-def create_teacher_audio_and_get_duration(index, scene, out_audio_file):
-    narration = (scene.get("narration") or "").strip()
-    sfx_type = scene.get("sfx_type", "gentle_whoosh")
-
-    raw_voice_mp3 = f"voice_raw_{index}.mp3"
-    sfx_ogg = f"raw_sfx_{index}.ogg"
-    sfx_url, sfx_vol = SCIENCE_FOLEY_URLS.get(sfx_type, SCIENCE_FOLEY_URLS["gentle_whoosh"])
-
-    # البدء بصوت المدرس المختار من قائمة Run workflow ثم البدائل الهادئة
-    voice_candidates = [
-        (TEACHER_VOICE, "-1Hz", "-2%"),
-        ("ar-JO-TaimNeural", "-1Hz", "-2%"),
-        ("ar-EG-ShakirNeural", "-1Hz", "-3%"),
-        ("ar-SA-HamedNeural", "-2Hz", "-3%")
-    ]
-
-    voice_ok = False
-    for voice_name, pitch, rate in voice_candidates:
+    for model_name in tts_models:
         try:
-            subprocess.run([
-                "edge-tts", "--voice", voice_name,
-                f"--pitch={pitch}", f"--rate={rate}",
-                "--text", narration, "--write-media", raw_voice_mp3
-            ], check=True, timeout=30, stderr=subprocess.DEVNULL)
-            if os.path.exists(raw_voice_mp3) and os.path.getsize(raw_voice_mp3) > 1000:
-                voice_ok = True
-                break
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
+            payload = {
+                "contents": [{"parts": [{"text": director_prompt}]}],
+                "generationConfig": {
+                    "responseModalities": ["AUDIO"],
+                    "speechConfig": {
+                        "voiceConfig": {
+                            "prebuiltVoiceConfig": {
+                                "voiceName": "Puck"
+                            }
+                        }
+                    }
+                }
+            }
+            r = requests.post(url, json=payload, timeout=45)
+            if r.status_code == 200:
+                rj = r.json()
+                for cand in rj.get("candidates", []):
+                    for part in cand.get("content", {}).get("parts", []):
+                        inline = part.get("inlineData") or part.get("inline_data")
+                        if inline and inline.get("data"):
+                            pcm_bytes = base64.b64decode(inline["data"])
+                            if len(pcm_bytes) > 4000:
+                                raw_pcm = "temp_gemini_voice.pcm"
+                                with open(raw_pcm, "wb") as f:
+                                    f.write(pcm_bytes)
+                                subprocess.run([
+                                    "ffmpeg", "-y", "-loglevel", "error",
+                                    "-f", "s16le", "-ar", "24000", "-ac", "1",
+                                    "-i", raw_pcm,
+                                    "-ar", "44100", "-ac", "2", dst_wav
+                                ], check=True)
+                                return True
         except Exception:
-            time.sleep(1)
+            pass
+    return False
 
+
+def build_segment_audio(seg_idx, segment, out_wav):
+    text = segment["narration"]
+    sfx_key = segment["sfx"]
+
+    raw_voice = f"seg_raw_{seg_idx}.wav"
+    trimmed_voice = f"seg_trim_{seg_idx}.wav"
+    sfx_ogg = f"seg_sfx_{seg_idx}.ogg"
+
+    voice_ok = generate_gemini_english_human_tts(text, raw_voice)
     if not voice_ok:
-        encoded = urllib.parse.quote(narration)
-        r = requests.get(f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=ar&q={encoded}", timeout=30)
-        with open(raw_voice_mp3, "wb") as f:
-            f.write(r.content)
+        raw_mp3 = f"seg_raw_{seg_idx}.mp3"
+        for v_name in [ENGLISH_VOICE, "en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural", "en-US-ChristopherNeural"]:
+            try:
+                subprocess.run([
+                    "edge-tts", "--voice", v_name, "--rate=+6%",
+                    "--text", text, "--write-media", raw_mp3
+                ], check=True, timeout=30, stderr=subprocess.DEVNULL)
+                if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
+                    shutil.copyfile(raw_mp3, raw_voice)
+                    break
+            except Exception:
+                time.sleep(1)
+
+    warm_eq = "highpass=f=80,equalizer=f=190:width_type=o:width=1.5:g=2.5,equalizer=f=3800:width_type=o:width=2.0:g=2.0"
+    subprocess.run([
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-i", raw_voice,
+        "-af", (
+            f"silenceremove=start_periods=1:start_silence=0.03:start_threshold=-42dB,"
+            f"areverse,silenceremove=start_periods=1:start_silence=0.05:start_threshold=-42dB,areverse,"
+            f"{warm_eq}"
+        ),
+        "-ar", "44100", "-ac", "2", trimmed_voice
+    ], check=True)
 
     probe = subprocess.run([
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1", raw_voice_mp3
+        "-of", "default=noprint_wrappers=1:nokey=1", trimmed_voice
     ], capture_output=True, text=True, check=True)
-    voice_dur = float(probe.stdout.strip() or "4.5")
-    final_dur = round(voice_dur + 0.55, 2)
+    v_dur = float(probe.stdout.strip() or "5.0")
+    final_dur = round(v_dur + 0.18, 2)
 
-    warm_eq = "highpass=f=75,equalizer=f=200:width_type=o:width=1.5:g=2.2,equalizer=f=3200:width_type=o:width=2.0:g=1.5"
-
+    sfx_url, sfx_vol = SFX_LIBRARY.get(sfx_key, SFX_LIBRARY["pop"])
     try:
-        r = requests.get(sfx_url, timeout=20)
+        r = requests.get(sfx_url, timeout=15)
         if r.ok and len(r.content) > 1000:
             with open(sfx_ogg, "wb") as f:
                 f.write(r.content)
@@ -452,12 +247,12 @@ def create_teacher_audio_and_get_duration(index, scene, out_audio_file):
                 "ffmpeg", "-y", "-loglevel", "error",
                 "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={final_dur}",
                 "-i", sfx_ogg,
-                "-i", raw_voice_mp3,
+                "-i", trimmed_voice,
                 "-filter_complex",
-                f"[1:a]atrim=0:{min(final_dur, 2.5)},afade=t=in:d=0.1,afade=t=out:st={max(min(final_dur, 2.5) - 0.5, 0.2)}:d=0.5,volume={sfx_vol}[sfx];"
-                f"[2:a]{warm_eq},adelay=150|150,apad=pad_dur=0.5,volume=1.35[v];"
-                f"[0:a][sfx][v]amix=inputs=3:duration=first:dropout_transition=0[a]",
-                "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_audio_file
+                f"[1:a]atrim=0:{min(final_dur, 2.0)},afade=t=in:d=0.05,afade=t=out:st={max(min(final_dur, 2.0) - 0.35, 0.1)}:d=0.35,volume={sfx_vol}[s];"
+                f"[2:a]adelay=40|40,volume=1.35[v];"
+                f"[0:a][s][v]amix=inputs=3:duration=first:dropout_transition=0[a]",
+                "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
             ], check=True)
             return final_dur
     except Exception:
@@ -466,241 +261,452 @@ def create_teacher_audio_and_get_duration(index, scene, out_audio_file):
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
         "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={final_dur}",
-        "-i", raw_voice_mp3,
+        "-i", trimmed_voice,
         "-filter_complex",
-        f"[1:a]{warm_eq},adelay=150|150,apad=pad_dur=0.5,volume=1.35[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
-        "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_audio_file
+        "[1:a]adelay=40|40,volume=1.35[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
+        "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
     ], check=True)
     return final_dur
 
 
-def extract_video_path(result):
-    if isinstance(result, str) and os.path.exists(result) and result.endswith((".mp4", ".webm", ".gif")):
-        return result
-    if isinstance(result, dict):
-        for k in ("video", "path", "url"):
-            val = result.get(k)
-            if isinstance(val, str) and os.path.exists(val):
-                return val
-            if isinstance(val, dict) and val.get("path") and os.path.exists(val["path"]):
-                return val["path"]
-    if isinstance(result, (list, tuple)):
-        for item in result:
-            found = extract_video_path(item)
-            if found:
-                return found
-    return None
+def smoothstep(x):
+    x = max(0.0, min(1.0, x))
+    return x * x * (3.0 - 2.0 * x)
 
 
-def animate_image_with_ai(index, img_file, motion_prompt, out_raw_video):
-    full_motion = f"{motion_prompt}, photorealistic 3D engineering animation, smooth fluid movement, high quality, keep structure intact"
-    neg_prompt = "morphing, deforming, melting, warping, blurry, low quality, worst quality, text, watermark, nsfw"
+def lerp(a, b, t):
+    return a + (b - a) * t
 
-    all_pool = [None] + HF_TOKENS
 
-    for pool_idx, tok in enumerate(all_pool):
-        tok_key = "SERVER_IP" if tok is None else f"TOK_{tok[:12]}"
-        if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
-            continue
+class NuclearPlantRenderer:
+    """
+    محرك رسوم وتحريك برمجي (Programmatic 2.5D/3D Explainer Renderer):
+    يرسم المحطة النووية بالكامل ويتحكم في الكاميرا والفقاعات والتوربينة واللافتات ومؤشرات الحرارة في كل فريم!
+    """
+    def __init__(self, font_path):
+        self.font_word = ImageFont.truetype(font_path, 76)
+        self.font_label = ImageFont.truetype(font_path, 30)
+        self.font_gauge_num = ImageFont.truetype(font_path, 54)
+        self.font_gauge_sub = ImageFont.truetype(font_path, 28)
+        self.font_card = ImageFont.truetype(font_path, 34)
 
-        quota_label = "IP السيرفر المجاني" if tok is None else f"مفتاح HF #{pool_idx} ({tok[:10]}...)"
-
-        try:
-            wan_space = "zerogpu-aoti/wan2-2-fp8da-aoti-faster"
-            print(f"جاري تحريك اللقطة الهندسية {index + 1} عبر ({wan_space} - {quota_label})...", flush=True)
-            client = Client(wan_space, token=tok, verbose=False)
-            res = client.predict(
-                input_image=handle_file(img_file),
-                prompt=full_motion,
-                steps=5,
-                negative_prompt=neg_prompt,
-                duration_seconds=2.5,
-                guidance_scale=1.1,
-                guidance_scale_2=1.1,
-                seed=CHARACTER_MASTER_SEED + index,
-                randomize_seed=False,
-                api_name="/generate_video"
+        random.seed(42)
+        self.bubbles = [(random.uniform(0.15, 0.85), random.uniform(0.0, 1.0), random.uniform(6, 13)) for _ in range(28)]
+        self.confetti = [
+            (
+                random.uniform(40, 1040),
+                random.uniform(-600, 1200),
+                random.uniform(4, 9),
+                random.choice([(255, 80, 80), (60, 180, 255), (255, 215, 40), (80, 230, 120), (200, 100, 255)])
             )
-            v_path = extract_video_path(res)
-            if v_path:
-                shutil.copyfile(v_path, out_raw_video)
-                print(f"🎉 تم تحريك اللقطة {index + 1} بنجاح عبر {wan_space} ({quota_label})!", flush=True)
-                return True
-        except Exception as e:
-            if is_quota_error(e):
-                print(f"⚠️ انتهى ليميت ({quota_label})، جاري التبديل فوراً للحساب التالي...", flush=True)
-                EXHAUSTED_ZEROGPU_TOKENS.add(tok_key)
-                continue
-            try:
-                ps = PinnedSpace(wan_space, token=tok)
-                up_img = ps.upload(img_file)
-                out = ps.call("/generate_video", [up_img, full_motion, 5, neg_prompt, 2.5, 1.1, 1.1, CHARACTER_MASTER_SEED + index, False])
-                ps.download_video(out, out_raw_video)
-                print(f"🎉 تم تحريك اللقطة {index + 1} بنجاح عبر {wan_space} Pinned ({quota_label})!", flush=True)
-                return True
-            except Exception as e2:
-                if is_quota_error(e2):
-                    print(f"⚠️ انتهى ليميت ({quota_label})، جاري التبديل فوراً للحساب التالي...", flush=True)
-                    EXHAUSTED_ZEROGPU_TOKENS.add(tok_key)
-                    continue
+            for _ in range(95)
+        ]
 
-    return False
+    def world_to_screen(self, wx, wy, cam_x, cam_y, zoom):
+        sx = (wx - cam_x) * zoom + 540.0
+        sy = (wy - cam_y) * zoom + 960.0
+        return sx, sy
 
+    def draw_callout(self, draw, target_wx, target_wy, box_wx, box_wy, text, bg_color, cam_x, cam_y, zoom, alpha=1.0):
+        if alpha <= 0.05:
+            return
+        tx, ty = self.world_to_screen(target_wx, target_wy, cam_x, cam_y, zoom)
+        bx, by = self.world_to_screen(box_wx, box_wy, cam_x, cam_y, zoom)
 
-def create_laser_scanner_reveal_video(exterior_img, interior_img, duration, out_video):
-    fps = 30
-    scan_seconds = min(2.8, duration * 0.65)
-    filter_complex = (
-        f"[0:v]scale=1080:1920,setsar=1[ext];"
-        f"[1:v]scale=1080:1920,setsar=1[int];"
-        f"[ext][int]blend=all_expr='if(lte(Y, (T/{scan_seconds})*1920), B, A)'[wiped];"
-        f"[wiped]drawbox=x=0:y='min((t/{scan_seconds})*1920,1930)':w=1080:h=10:color=0x00FFFF@0.90:t=fill,"
-        f"drawbox=x=0:y='min((t/{scan_seconds})*1920-8,1930)':w=1080:h=26:color=0x00BFFF@0.35:t=fill,"
-        f"scale=1160:2062,crop=1080:1920:'(iw-1080)/2':'(ih-1920)*(t/{duration})',"
-        f"cas=0.6,format=yuv420p[v]"
-    )
-    subprocess.run([
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-loop", "1", "-t", str(duration), "-i", exterior_img,
-        "-loop", "1", "-t", str(duration), "-i", interior_img,
-        "-filter_complex", filter_complex,
-        "-map", "[v]", "-t", str(duration), "-r", str(fps),
-        "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", out_video
-    ], check=True)
+        draw.line([(tx, ty), (bx, by)], fill=(35, 45, 55), width=max(int(3 * zoom), 2))
+        r_dot = max(int(6 * zoom), 4)
+        draw.ellipse([(tx - r_dot, ty - r_dot), (tx + r_dot, ty + r_dot)], fill=(255, 255, 255), outline=(35, 45, 55), width=2)
 
+        bbox = draw.textbbox((0, 0), text, font=self.font_label)
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
+        pad_x, pad_y = 22, 12
+        rect = [bx - tw // 2 - pad_x, by - th // 2 - pad_y, bx + tw // 2 + pad_x, by + th // 2 + pad_y]
+        draw.rounded_rectangle(rect, radius=22, fill=bg_color, outline=(255, 255, 255), width=3)
+        draw.text((bx - tw // 2, by - th // 2 - 2), text, font=self.font_label, fill=(255, 255, 255))
 
-def render_clean_subtitle_png(phrase_text, png_path):
-    font_file = ensure_arabic_font()
-    img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
+    def draw_radiation_symbol(self, draw, sx, sy, radius):
+        r = max(int(radius), 6)
+        draw.ellipse([(sx - r, sy - r), (sx + r, sy + r)], fill=(250, 215, 40), outline=(30, 30, 30), width=2)
+        for angle in (0, 120, 240):
+            draw.pieslice([(sx - r + 2, sy - r + 2), (sx + r - 2, sy + r - 2)], start=angle, end=angle + 55, fill=(30, 30, 30))
+        r_in = max(r // 4, 2)
+        draw.ellipse([(sx - r_in, sy - r_in), (sx + r_in, sy + r_in)], fill=(250, 215, 40))
 
-    try:
-        font = ImageFont.truetype(font_file, 52, layout_engine=ImageFont.Layout.BASIC)
-        reshaped = ARABIC_RESHAPER.reshape(phrase_text)
-        display_text = get_display(reshaped)
-    except Exception:
-        font = ImageFont.truetype(font_file, 52)
-        display_text = phrase_text
+    def draw_temp_gauge(self, draw, temp_c, label="CORE TEMP"):
+        card = [270, 1520, 810, 1710]
+        draw.rounded_rectangle(card, radius=28, fill=(248, 246, 240), outline=(45, 55, 65), width=5)
 
-    bbox = draw.textbbox((0, 0), display_text, font=font)
-    w = bbox[2] - bbox[0]
-    h = bbox[3] - bbox[1]
-    x_pos = (1080 - w) // 2
-    y_pos = 1540
+        bar_bg = [310, 1555, 595, 1605]
+        draw.rounded_rectangle(bar_bg, radius=22, fill=(230, 230, 230), outline=(55, 65, 75), width=3)
 
-    pad_x, pad_y = 32, 14
-    draw.rounded_rectangle(
-        [(x_pos - pad_x, y_pos - pad_y), (x_pos + w + pad_x, y_pos + h + pad_y + 10)],
-        radius=22,
-        fill=(10, 18, 28, 190),
-        outline=(0, 210, 255, 210),
-        width=2
-    )
-    for dx in (-3, 0, 3):
-        for dy in (-3, 0, 3):
-            if dx != 0 or dy != 0:
-                draw.text((x_pos + dx, y_pos + dy), display_text, font=font, fill=(0, 0, 0, 255))
-    draw.text((x_pos, y_pos), display_text, font=font, fill=(255, 255, 255, 255))
-    img.save(png_path, "PNG")
+        ratio = max(0.08, min(1.0, (temp_c - 200.0) / 1000.0))
+        fill_w = int((595 - 310 - 8) * ratio)
+        bar_color = (230, 55, 45) if temp_c >= 700 else (45, 185, 85)
+        draw.rounded_rectangle([314, 1559, 314 + fill_w, 1601], radius=18, fill=bar_color)
 
+        t_str = f"{int(temp_c)}°C"
+        draw.text((620, 1548), t_str, font=self.font_gauge_num, fill=bar_color)
 
-def create_scene_assets(index, scene, uploaded_map):
-    image_prompt = scene["image_prompt"]
-    motion_prompt = scene["motion_prompt"]
-    narration = (scene.get("narration") or "").strip()
-    zoom_mode = scene.get("zoom_mode", "in_center")
+        bbox = draw.textbbox((0, 0), label, font=self.font_gauge_sub)
+        lw = bbox[2] - bbox[0]
+        draw.text((540 - lw // 2, 1638), label, font=self.font_gauge_sub, fill=(45, 55, 65))
 
-    audio_file = f"scene_{index}.wav"
-    duration = create_teacher_audio_and_get_duration(index, scene, audio_file)
+    def render_frame(self, seg_idx, seg_progress, global_time, current_word):
+        img = Image.new("RGB", (1080, 1920), (115, 178, 235))
+        draw = ImageDraw.Draw(img, "RGBA")
 
-    img_file = f"scene_{index}.jpg"
-    obtain_scene_image(index, image_prompt, img_file, uploaded_map)
+        seg = NUCLEAR_PLANT_SEGMENTS[seg_idx]
+        ease_p = smoothstep(seg_progress)
+        cam_x = lerp(seg["cam_start"][0], seg["cam_end"][0], ease_p)
+        cam_y = lerp(seg["cam_start"][1], seg["cam_end"][1], ease_p)
+        zoom = lerp(seg["cam_start"][2], seg["cam_end"][2], ease_p)
 
-    raw_ai_video = f"raw_ai_{index}.mp4"
-    base_video = f"base_{index}.mp4"
-    video_file = f"scene_{index}.mp4"
-    fps = 30
-    total_frames = int(duration * fps) + 15
+        def w2s(wx, wy):
+            return self.world_to_screen(wx, wy, cam_x, cam_y, zoom)
 
-    prev_img_file = f"scene_{index - 1}.jpg"
-    if zoom_mode == "scanner_reveal" and os.path.exists(prev_img_file):
-        print("🔍 جاري تطبيق تأثير المسح الضوئي (Laser Scanner Reveal) لكشف السخان من الداخل...", flush=True)
-        create_laser_scanner_reveal_video(prev_img_file, img_file, duration, base_video)
-    else:
-        ai_animated = animate_image_with_ai(index, img_file, motion_prompt, raw_ai_video)
+        # 1. السماء والشمس المتوهجة والسحب المتحركة
+        sun_x, sun_y = 870, 390
+        for r_glow, a_glow in [(150, 35), (115, 65), (85, 110)]:
+            draw.ellipse([(sun_x - r_glow, sun_y - r_glow), (sun_x + r_glow, sun_y + r_glow)], fill=(255, 235, 130, a_glow))
+        draw.ellipse([(sun_x - 62, sun_y - 62), (sun_x + 62, sun_y + 62)], fill=(255, 248, 195))
 
-        if ai_animated and os.path.exists(raw_ai_video):
-            y_crop_expr = f"(ih-1920)/2 - 35*(t/{duration})"
-            if zoom_mode == "in_top":
-                y_crop_expr = f"(ih-1920)*0.45*(1 - t/{duration})"
+        cloud_positions = [(180, 260, 1.0), (540, 330, 1.15), (820, 170, 0.9), (90, 480, 0.85)]
+        for cx0, cy0, cscale in cloud_positions:
+            cx = (cx0 + global_time * 8.0 * cscale) % 1280 - 100
+            cy = cy0
+            for dx, dy, rad in [(-55, 10, 48), (0, -12, 62), (55, 8, 50), (20, 18, 45)]:
+                r_c = int(rad * cscale)
+                draw.ellipse([(cx + dx * cscale - r_c, cy + dy * cscale - r_c), (cx + dx * cscale + r_c, cy + dy * cscale + r_c)], fill=(248, 250, 252))
 
-            subprocess.run([
-                "ffmpeg", "-y", "-loglevel", "error",
-                "-i", raw_ai_video,
-                "-vf", (
-                    f"setpts=1.35*PTS,"
-                    f"tpad=stop_mode=clone:stop_duration=15,"
-                    f"scale=1220:2168:force_original_aspect_ratio=increase,crop=1220:2168,"
-                    f"crop=1080:1920:'(iw-1080)/2':'{y_crop_expr}',"
-                    f"cas=0.65,setsar=1,format=yuv420p"
-                ),
-                "-t", str(duration), "-r", str(fps),
-                "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
-            ], check=True)
-        else:
-            z_expr = "min(zoom+0.0018,1.22)" if "in" in zoom_mode else "if(eq(on,1),1.22,max(zoom-0.0018,1.0))"
-            y_focus = "ih/2-(ih/zoom/2)"
-            if zoom_mode == "in_bottom":
-                y_focus = "ih*0.72-(ih/zoom/2)"
-            elif zoom_mode == "in_top":
-                y_focus = "ih*0.25-(ih/zoom/2)"
+        # 2. الخلفية الطبيعية (الأرض الخضراء، النهر، القارب الشراعي، الأشجار، الطريق)
+        _, horizon_y = w2s(0, 680)
+        _, river_top = w2s(0, 740)
+        _, river_bot = w2s(0, 880)
+        draw.rectangle([0, int(horizon_y), 1080, 1920], fill=(102, 182, 72))
+        draw.rectangle([0, int(river_top), 1080, int(river_bot)], fill=(78, 165, 200))
+        draw.line([(0, int(river_top)), (1080, int(river_top))], fill=(195, 175, 135), width=max(int(6 * zoom), 3))
+        draw.line([(0, int(river_bot)), (1080, int(river_bot))], fill=(145, 115, 78), width=max(int(10 * zoom), 4))
 
-            zoom_filter = (
-                f"scale=1440:2560:force_original_aspect_ratio=increase,crop=1440:2560,"
-                f"zoompan=z='{z_expr}':x='iw/2-(iw/zoom/2)':y='{y_focus}':"
-                f"d={total_frames}:s=1080x1920:fps={fps},cas=0.6,setsar=1,format=yuv420p"
-            )
-            subprocess.run([
-                "ffmpeg", "-y", "-loglevel", "error",
-                "-loop", "1", "-i", img_file,
-                "-vf", zoom_filter, "-t", str(duration), "-r", str(fps),
-                "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
-            ], check=True)
+        # بقعة الماء الساخن والسمك في المشهد 5 (00:36 - 00:42)
+        if seg_idx in (5, 6):
+            rx1, ry1 = w2s(620, 775)
+            rx2, ry2 = w2s(960, 865)
+            plume_col = (225, 115, 75, 185) if seg_idx == 5 else (140, 175, 190, 110)
+            draw.ellipse([rx1, ry1, rx2, ry2], fill=plume_col)
+            if seg_idx == 5:
+                for fx_off, fy_off in [(700, 805), (780, 825), (860, 810)]:
+                    fx, fy = w2s(fx_off - seg_progress * 25, fy_off)
+                    fish_c = (230, 155, 145) if seg_progress > 0.35 else (170, 185, 195)
+                    fw, fh = int(34 * zoom), int(15 * zoom)
+                    draw.ellipse([fx - fw, fy - fh, fx + fw, fy + fh], fill=fish_c, outline=(50, 60, 70), width=2)
+                    draw.polygon([(fx + fw - 4, fy), (fx + fw + int(16 * zoom), fy - fh), (fx + fw + int(16 * zoom), fy + fh)], fill=fish_c, outline=(50, 60, 70))
+                    draw.ellipse([fx - fw // 2 - 3, fy - 4, fx - fw // 2 + 3, fy + 2], fill=(20, 20, 20))
 
-    clean_words = re.sub(r'[\u0617-\u061A\u064B-\u0652"\'«»*():؛،.؟]', '', narration).split()
-    phrases = [" ".join(clean_words[i:i + 5]) for i in range(0, len(clean_words), 5)] or ["..."]
-    step_dur = duration / max(len(phrases), 1)
+        # قارب شراعي يتحرك بهدوء في النهر
+        boat_wx = 920 - (global_time * 12.0) % 700
+        bx, by = w2s(boat_wx, 815)
+        bw = int(28 * zoom)
+        draw.polygon([(bx - bw, by), (bx + bw, by), (bx + int(bw * 0.7), by + int(12 * zoom)), (bx - int(bw * 0.7), by + int(12 * zoom))], fill=(140, 90, 50))
+        draw.polygon([(bx, by - int(48 * zoom)), (bx, by - 2), (bx + int(24 * zoom), by - 2)], fill=(250, 250, 250), outline=(80, 80, 80))
 
-    inputs_cmd = ["-i", base_video, "-i", audio_file]
-    filter_parts = []
-    last_stream = "[0:v]"
-    for p_idx, phrase in enumerate(phrases):
-        png_file = f"sub_{index}_{p_idx}.png"
-        render_clean_subtitle_png(phrase, png_file)
-        inputs_cmd.extend(["-loop", "1", "-i", png_file])
-        start_t = round(p_idx * step_dur, 2)
-        end_t = round((p_idx + 1) * step_dur, 2)
-        next_stream = f"[v{p_idx}]"
-        inp_idx = p_idx + 2
-        filter_parts.append(f"{last_stream}[{inp_idx}:v]overlay=0:0:enable='between(t,{start_t},{end_t})'{next_stream}")
-        last_stream = next_stream
+        # المنصة الخرسانية للمحطة والطريق الأسفلتي
+        pad_pts = [w2s(100, 920), w2s(1120, 920), w2s(1180, 1270), w2s(40, 1270)]
+        draw.polygon(pad_pts, fill=(216, 210, 197), outline=(165, 158, 145))
 
-    fade_out_st = max(round(duration - 0.22, 2), 0.5)
-    filter_parts.append(
-        f"{last_stream}fade=t=in:st=0:d=0.20,fade=t=out:st={fade_out_st}:d=0.22,format=yuv420p[vout]"
-    )
+        road_pts = [w2s(-50, 1210), w2s(1200, 1310), w2s(1200, 1420), w2s(-50, 1310)]
+        draw.polygon(road_pts, fill=(105, 110, 115), outline=(80, 85, 90))
+        for r_i in range(8):
+            lx1, ly1 = w2s(80 + r_i * 145, 1262 + r_i * 11)
+            lx2, ly2 = w2s(135 + r_i * 145, 1266 + r_i * 11)
+            draw.line([(lx1, ly1), (lx2, ly2)], fill=(245, 245, 245), width=max(int(5 * zoom), 3))
 
-    subprocess.run([
-        "ffmpeg", "-y", "-loglevel", "error",
-        *inputs_cmd,
-        "-filter_complex", ";".join(filter_parts),
-        "-map", "[vout]", "-map", "1:a",
-        "-t", str(duration),
-        "-c:v", "libx264", "-preset", "fast", "-crf", "16",
-        "-c:a", "aac", "-ar", "44100", "-ac", "2",
-        video_file
-    ], check=True)
-    return video_file, duration
+        # مبنى المحطة الخلفي واللافتة
+        b_tl = w2s(270, 835)
+        b_br = w2s(450, 935)
+        draw.rectangle([b_tl[0], b_tl[1], b_br[0], b_br[1]], fill=(228, 212, 182), outline=(120, 110, 95), width=2)
+        sign_tl = w2s(295, 795)
+        sign_br = w2s(425, 825)
+        draw.rounded_rectangle([sign_tl[0], sign_tl[1], sign_br[0], sign_br[1]], radius=6, fill=(40, 45, 50), outline=(245, 205, 45), width=2)
+
+        # 3. قبة الاحتواء الخرسانية والفولاذية (تظهر من المشهد 7 فصاعداً)
+        if seg_idx >= 7:
+            dome_Drop = smoothstep(seg_progress * 1.6) if seg_idx == 7 else 1.0
+            dy_off = (1.0 - dome_Drop) * -350
+            d_tl = w2s(365, 740 + dy_off)
+            d_br = w2s(695, 1155 + dy_off)
+            draw.pieslice([d_tl[0], d_tl[1], d_br[0], d_br[1] + int(180 * zoom)], start=180, end=360, fill=(145, 150, 155), outline=(80, 85, 90), width=4)
+            draw.rectangle([d_tl[0], (d_tl[1] + d_br[1]) // 2, d_br[0], d_br[1]], fill=(145, 150, 155), outline=(80, 85, 90), width=3)
+            # الجدار الخرساني السميك المحيط بالقبة
+            draw.arc([d_tl[0] - int(18 * zoom), d_tl[1] - int(18 * zoom), d_br[0] + int(18 * zoom), d_br[1] + int(180 * zoom)], start=180, end=360, fill=(210, 212, 215), width=max(int(22 * zoom), 8))
+            draw.rectangle([d_tl[0] - int(20 * zoom), (d_tl[1] + d_br[1]) // 2, d_tl[0], d_br[1]], fill=(210, 212, 215), outline=(110, 115, 120), width=2)
+            draw.rectangle([d_br[0], (d_tl[1] + d_br[1]) // 2, d_br[0] + int(20 * zoom), d_br[1]], fill=(210, 212, 215), outline=(110, 115, 120), width=2)
+
+        # 4. تانك المفاعل الأول (Primary Reactor Vessel) + قضبان اليورانيوم + أعمدة التحكم
+        t1_tl = w2s(415, 865)
+        t1_br = w2s(535, 1140)
+        base_tl = w2s(400, 1140)
+        base_br = w2s(550, 1158)
+        draw.rectangle([base_tl[0], base_tl[1], base_br[0], base_br[1]], fill=(200, 195, 185), outline=(235, 185, 35), width=3)
+        draw.rectangle([t1_tl[0], t1_tl[1], t1_br[0], t1_br[1]], fill=(230, 238, 245), outline=(130, 145, 160), width=3)
+
+        # الماء داخل تانك المفاعل (يتحول للون أخضر مشع خفيف من المشهد 4 فصاعداً)
+        water_col = (125, 198, 190, 210) if seg_idx >= 4 else (115, 195, 235, 210)
+        w1_tl = w2s(422, 910)
+        w1_br = w2s(528, 1135)
+        draw.rectangle([w1_tl[0], w1_tl[1], w1_br[0], w1_br[1]], fill=water_col)
+
+        # الونش الأصفر في المشهد 0 و 1
+        if seg_idx <= 1:
+            c_tl = w2s(395, 780)
+            c_br = w2s(555, 1150)
+            draw.line([(c_tl[0], c_tl[1]), (c_tl[0], c_br[1])], fill=(235, 185, 40), width=max(int(10 * zoom), 4))
+            draw.line([(c_br[0], c_tl[1]), (c_br[0], c_br[1])], fill=(235, 185, 40), width=max(int(10 * zoom), 4))
+            draw.line([(c_tl[0], c_tl[1]), (c_br[0], c_tl[1])], fill=(235, 185, 40), width=max(int(12 * zoom), 5))
+
+        # نزول قضبان اليورانيوم وتوهجها الحراري
+        rod_drop = smoothstep(seg_progress * 2.2) if seg_idx == 0 else 1.0
+        rod_y_top = lerp(810, 995, rod_drop)
+        rod_y_bot = rod_y_top + 125
+
+        is_hot = (seg_idx == 0 and seg_progress > 0.45) or seg_idx in (1, 2, 3, 4, 5, 6, 7, 8)
+        heat_intensity = 1.0 if seg_idx in (2, 8) else 0.65
+        if is_hot:
+            gx, gy = w2s(475, (rod_y_top + rod_y_bot) / 2)
+            gr = int(75 * zoom * heat_intensity)
+            draw.ellipse([gx - gr, gy - gr, gx + gr, gy + gr], fill=(255, 165, 50, int(95 * heat_intensity)))
+
+        for r_i in range(5):
+            rx1, ry1 = w2s(434 + r_i * 18, rod_y_top)
+            rx2, ry2 = w2s(446 + r_i * 18, rod_y_bot)
+            r_col = (245, 175, 65) if is_hot else (135, 95, 70)
+            draw.rectangle([rx1, ry1, rx2, ry2], fill=r_col, outline=(90, 65, 45), width=1)
+
+        cap1_tl, cap1_br = w2s(430, rod_y_top - 8), w2s(520, rod_y_top)
+        cap2_tl, cap2_br = w2s(430, rod_y_bot), w2s(520, rod_y_bot + 8)
+        draw.rectangle([cap1_tl[0], cap1_tl[1], cap1_br[0], cap1_br[1]], fill=(120, 130, 140))
+        draw.rectangle([cap2_tl[0], cap2_tl[1], cap2_br[0], cap2_br[1]], fill=(120, 130, 140))
+
+        # أعمدة التحكم السوداء (Control Rods) والمغناطيس الكهربائي
+        if seg_idx >= 2:
+            if seg_idx == 2:
+                ctrl_depth = smoothstep((seg_progress - 0.35) * 1.8)
+            elif seg_idx == 3:
+                ctrl_depth = 1.0 if seg_progress > 0.58 else 0.25
+            else:
+                ctrl_depth = 0.55
+
+            c_top = lerp(845, 935, ctrl_depth)
+            c_bot = c_top + 95
+            for c_i in range(3):
+                cx1, cy1 = w2s(444 + c_i * 26, c_top)
+                cx2, cy2 = w2s(454 + c_i * 26, c_bot)
+                draw.rectangle([cx1, cy1, cx2, cy2], fill=(70, 78, 85), outline=(40, 45, 50), width=1)
+
+                if seg_idx >= 3:
+                    # ملفات المغناطيس الكهربائي الحمراء والصفراء أعلى التانك
+                    mx1, my1 = w2s(440 + c_i * 26, 875)
+                    mx2, my2 = w2s(458 + c_i * 26, 898)
+                    draw.rectangle([mx1, my1, mx2, my2], fill=(215, 55, 45), outline=(250, 205, 50), width=2)
+
+        # فقاعات الغليان داخل تانك المفاعل
+        if (seg_idx == 0 and seg_progress > 0.5) or seg_idx >= 1:
+            for bx_norm, by_seed, b_rad in self.bubbles[:16]:
+                by_prog = (by_seed + global_time * 0.55) % 1.0
+                b_wx = lerp(432, 518, bx_norm)
+                b_wy = lerp(1020, 912, by_prog)
+                bsx, bsy = w2s(b_wx, b_wy)
+                br = max(int(b_rad * 0.45 * zoom), 3)
+                draw.ellipse([bsx - br, bsy - br, bsx + br, bsy + br], fill=(255, 255, 255, 195))
+
+        # رموز الإشعاع النووي داخل المفاعل (من المشهد 4 فصاعداً)
+        if seg_idx >= 4:
+            for rad_wx, rad_wy in [(445, 960), (485, 945), (505, 980), (460, 995)]:
+                rsx, rsy = w2s(rad_wx, rad_wy + math.sin(global_time * 3 + rad_wx) * 6)
+                self.draw_radiation_symbol(draw, rsx, rsy, 7 * zoom)
+
+        # 5. التانك الثاني (Secondary Clean Water Loop) ومبادل الحرارة (من المشهد 4 فصاعداً)
+        if seg_idx >= 4:
+            t2_tl = w2s(575, 865)
+            t2_br = w2s(665, 1140)
+            draw.rectangle([t2_tl[0], t2_tl[1], t2_br[0], t2_br[1]], fill=(225, 235, 245), outline=(130, 145, 160), width=3)
+            w2_tl = w2s(582, 935)
+            w2_br = w2s(658, 1135)
+            draw.rectangle([w2_tl[0], w2_tl[1], w2_br[0], w2_br[1]], fill=(120, 198, 240, 210))
+
+            # أنابيب التبادل الحراري والربط بين التانكين
+            p_hot1, p_hot2 = w2s(528, 995), w2s(585, 1012)
+            p_cold1, p_cold2 = w2s(528, 1085), w2s(585, 1102)
+            draw.rounded_rectangle([p_hot1[0], p_hot1[1], p_hot2[0], p_hot2[1]], radius=8, fill=(240, 105, 55))
+            draw.rounded_rectangle([p_cold1[0], p_cold1[1], p_cold2[0], p_cold2[1]], radius=8, fill=(75, 165, 235))
+
+            # ملف التسخين النحاسي داخل التانك الثاني
+            coil_tl, coil_br = w2s(596, 975), w2s(644, 1120)
+            draw.arc([coil_tl[0], coil_tl[1], coil_br[0], coil_br[1]], start=180, end=360, fill=(235, 125, 65), width=max(int(5 * zoom), 3))
+            draw.line([(coil_tl[0], (coil_tl[1] + coil_br[1]) // 2), (coil_tl[0], coil_br[1])], fill=(235, 125, 65), width=max(int(5 * zoom), 3))
+            draw.line([(coil_br[0], (coil_tl[1] + coil_br[1]) // 2), (coil_br[0], coil_br[1])], fill=(235, 125, 65), width=max(int(5 * zoom), 3))
+
+            # طلمبة المياه (Pump)
+            pmp_x, pmp_y = w2s(556, 1093)
+            pmp_r = int(14 * zoom)
+            draw.ellipse([pmp_x - pmp_r, pmp_y - pmp_r, pmp_x + pmp_r, pmp_y + pmp_r], fill=(55, 65, 75), outline=(255, 255, 255), width=2)
+            if seg_idx == 8:
+                # علامة X حمراء على الطلمبة عند تعطلها في المشهد 8
+                draw.line([(pmp_x - pmp_r, pmp_y - pmp_r), (pmp_x + pmp_r, pmp_y + pmp_r)], fill=(235, 45, 45), width=4)
+                draw.line([(pmp_x + pmp_r, pmp_y - pmp_r), (pmp_x - pmp_r, pmp_y + pmp_r)], fill=(235, 45, 45), width=4)
+
+        # 6. ماسورة البخار العلوية + التوربينة الدوارة + المولد الكهربائي الأخضر + عمود الإنارة
+        if seg_idx >= 1:
+            pipe_src_x = 620 if seg_idx >= 4 else 475
+            ps1 = w2s(pipe_src_x, 865)
+            ps2 = w2s(pipe_src_x, 815)
+            ps3 = w2s(760, 815)
+            ps4 = w2s(760, 1040)
+            pw = max(int(16 * zoom), 6)
+            draw.line([ps1, ps2, ps3, ps4], fill=(210, 218, 225), width=pw, joint="curve")
+
+            # التوربينة البخارية الدوارة
+            tb_x, tb_y = w2s(765, 1065)
+            tb_w, tb_h = int(52 * zoom), int(28 * zoom)
+            draw.rectangle([tb_x - tb_w, tb_y - tb_h, tb_x + tb_w, tb_y + tb_h], fill=(165, 175, 185), outline=(90, 100, 110), width=2)
+            spin_phase = global_time * 12.0
+            for b_i in range(6):
+                bx_ blade = tb_x - tb_w + int((b_i + 0.5) * (2 * tb_w / 6))
+                bh_ blade = int(tb_h * (0.4 + 0.6 * abs(math.sin(spin_phase + b_i * 0.9))))
+                draw.polygon([
+                    (bx_blade - int(7 * zoom), tb_y - bh_blade),
+                    (bx_blade + int(7 * zoom), tb_y),
+                    (bx_blade - int(7 * zoom), tb_y + bh_blade)
+                ], fill=(245, 248, 252), outline=(120, 130, 140))
+
+            # المولد الكهربائي الأخضر
+            gen_tl = w2s(830, 1015)
+            gen_br = w2s(920, 1125)
+            draw.rectangle([gen_tl[0], gen_tl[1], gen_br[0], gen_br[1]], fill=(68, 178, 142), outline=(45, 125, 98), width=3)
+            # عمود الإنارة المضيء
+            lamp_base = w2s(965, 1140)
+            lamp_top = w2s(965, 1020)
+            draw.line([lamp_base, lamp_top], fill=(70, 75, 80), width=max(int(5 * zoom), 3))
+            lr = int(18 * zoom)
+            draw.ellipse([lamp_top[0] - lr * 2, lamp_top[1] - lr * 2, lamp_top[0] + lr * 2, lamp_top[1] + lr * 2], fill=(255, 240, 120, 95))
+            draw.ellipse([lamp_top[0] - lr, lamp_top[1] - lr, lamp_top[0] + lr, lamp_top[1] + lr], fill=(255, 245, 150), outline=(120, 110, 60), width=2)
+
+        # 7. المكثف (Condenser) وأنابيب النهر وبرج التبريد العملاق (من المشهد 5 فصاعداً)
+        if seg_idx >= 5:
+            cond_tl = w2s(760, 945)
+            cond_br = w2s(835, 1005)
+            draw.rectangle([cond_tl[0], cond_tl[1], cond_br[0], cond_br[1]], fill=(145, 190, 220), outline=(95, 135, 165), width=2)
+
+        if seg_idx >= 6:
+            # برج التبريد المخروطي العملاق (Cooling Tower)
+            ct_top_l, ct_top_r = w2s(955, 730), w2s(1065, 730)
+            ct_mid_l, ct_mid_r = w2s(968, 845), w2s(1052, 845)
+            ct_bot_l, ct_bot_r = w2s(930, 1025), w2s(1090, 1025)
+
+            tower_alpha = 155 if seg_idx == 6 else 255
+            tower_col = (218, 212, 198, tower_alpha)
+            draw.polygon([ct_top_l, ct_top_r, ct_mid_r, ct_bot_r, ct_bot_l, ct_mid_l], fill=tower_col, outline=(140, 135, 125))
+
+            # سحابة بخار الماء النقي H2O أعلى برج التبريد
+            for s_i in range(5):
+                s_prog = (s_i * 0.2 + global_time * 0.35) % 1.0
+                sx_c, sy_c = w2s(1010 + math.sin(s_prog * 5) * 18, 720 - s_prog * 140)
+                sr = int((28 + s_prog * 38) * zoom)
+                draw.ellipse([sx_c - sr, sy_c - sr, sx_c + sr, sy_c + sr], fill=(255, 255, 255, int(210 * (1.0 - s_prog * 0.65))))
+
+        # 8. المولدات الاحتياطية الصفراء وتانك مياه الجاذبية المرتفع (من المشهد 8 فصاعداً)
+        if seg_idx >= 8:
+            gen2_tl, gen2_br = w2s(245, 1045), w2s(325, 1135)
+            draw.rectangle([gen2_tl[0], gen2_tl[1], gen2_br[0], gen2_br[1]], fill=(242, 198, 52), outline=(165, 130, 30), width=2)
+            wt_tl, wt_br = w2s(255, 815), w2s(345, 895)
+            leg1, leg2 = w2s(270, 1135), w2s(330, 1135)
+            draw.line([(wt_tl[0] + 10, wt_br[1]), leg1], fill=(95, 105, 115), width=max(int(5 * zoom), 3))
+            draw.line([(wt_br[0] - 10, wt_br[1]), leg2], fill=(95, 105, 115), width=max(int(5 * zoom), 3))
+            draw.rectangle([wt_tl[0], wt_tl[1], wt_br[0], wt_br[1]], fill=(135, 195, 230), outline=(85, 135, 165), width=3)
+
+        # 9. حوض الوقود النووي المستعمل وتوهج شيرينكوف الأزرق (من المشهد 9 فصاعداً)
+        if seg_idx >= 9:
+            pool_tl, pool_br = w2s(125, 1045), w2s(235, 1155)
+            draw.rectangle([pool_tl[0], pool_tl[1], pool_br[0], pool_br[1]], fill=(225, 232, 238), outline=(130, 140, 150), width=3)
+            pw_tl, pw_br = w2s(133, 1060), w2s(227, 1145)
+            draw.rectangle([pw_tl[0], pw_tl[1], pw_br[0], pw_br[1]], fill=(85, 185, 245, 225))
+            # إشعاع شيرينكوف الأزرق المتوهج
+            cg_x, cg_y = w2s(180, 1105)
+            c_rad = int(42 * zoom)
+            draw.ellipse([cg_x - c_rad, cg_y - c_rad, cg_x + c_rad, cg_y + c_rad], fill=(120, 225, 255, 140))
+
+        # 10. اللافتات التوضيحية (Callout Labels) والمؤشرات الخاصة بكل مشهد
+        if seg_idx == 0:
+            self.draw_callout(draw, 475, 1045, 675, 965, "URANIUM FUEL", (215, 135, 45), cam_x, cam_y, zoom)
+            self.draw_callout(draw, 425, 1090, 260, 1140, "WATER TANK", (105, 165, 205), cam_x, cam_y, zoom)
+        elif seg_idx == 1:
+            self.draw_callout(draw, 475, 835, 310, 825, "STEAM", (135, 155, 170), cam_x, cam_y, zoom)
+            self.draw_callout(draw, 765, 1055, 680, 945, "TURBINE", (120, 140, 155), cam_x, cam_y, zoom)
+            self.draw_callout(draw, 875, 1040, 875, 920, "GENERATOR", (68, 178, 142), cam_x, cam_y, zoom)
+        elif seg_idx == 2:
+            if seg_progress < 0.48:
+                temp_val = lerp(468, 1200, seg_progress / 0.48)
+            else:
+                temp_val = lerp(1200, 300, (seg_progress - 0.48) / 0.52)
+            self.draw_temp_gauge(draw, temp_val, "CORE TEMPERATURE")
+            if seg_progress > 0.45:
+                self.draw_callout(draw, 495, 965, 685, 945, "CONTROL RODS", (65, 75, 85), cam_x, cam_y, zoom)
+        elif seg_idx == 3:
+            self.draw_callout(draw, 475, 885, 680, 880, "ELECTROMAGNETS", (215, 55, 45), cam_x, cam_y, zoom)
+        elif seg_idx == 4:
+            self.draw_callout(draw, 555, 1045, 555, 1190, "CLOSED LOOP", (215, 135, 45), cam_x, cam_y, zoom)
+            self.draw_callout(draw, 620, 995, 780, 940, "SECONDARY LOOP", (85, 165, 220), cam_x, cam_y, zoom)
+        elif seg_idx == 5:
+            self.draw_callout(draw, 795, 965, 650, 895, "STEAM -> WATER", (85, 165, 220), cam_x, cam_y, zoom)
+            if seg_progress > 0.45:
+                self.draw_temp_gauge(draw, 70, "RIVER WATER TEMP")
+        elif seg_idx == 6:
+            self.draw_callout(draw, 1010, 865, 790, 835, "COOLING TOWER", (145, 140, 130), cam_x, cam_y, zoom)
+            self.draw_callout(draw, 1010, 665, 1010, 560, "PURE H2O VAPOR", (75, 155, 215), cam_x, cam_y, zoom)
+        elif seg_idx == 7:
+            self.draw_callout(draw, 530, 755, 530, 660, "CONTAINMENT DOME (+1m)", (115, 120, 125), cam_x, cam_y, zoom)
+        elif seg_idx == 8:
+            self.draw_temp_gauge(draw, lerp(745, 1064, min(seg_progress * 1.5, 1.0)), "CORE TEMPERATURE")
+            self.draw_callout(draw, 285, 1070, 210, 960, "BACKUP GENERATORS", (215, 165, 35), cam_x, cam_y, zoom)
+            self.draw_callout(draw, 300, 845, 300, 735, "GRAVITY WATER TANK", (85, 165, 220), cam_x, cam_y, zoom)
+        elif seg_idx == 9:
+            self.draw_callout(draw, 180, 1100, 340, 990, "SPENT FUEL POOL", (65, 155, 225), cam_x, cam_y, zoom)
+        elif seg_idx == 10:
+            # بطاقة المقارنة: حبة وقود يورانيوم واحدة = طن فحم كامل!
+            c_box = [130, 1150, 950, 1640]
+            draw.rounded_rectangle(c_box, radius=32, fill=(250, 246, 235), outline=(45, 55, 65), width=5)
+            # حبة اليورانيوم + الدب الجيلي
+            draw.rounded_rectangle([240, 1330, 305, 1415], radius=12, fill=(125, 135, 145), outline=(40, 45, 50), width=4)
+            draw.ellipse([345, 1320, 405, 1375], fill=(235, 65, 55), outline=(140, 30, 25), width=3)
+            draw.rounded_rectangle([340, 1355, 410, 1415], radius=18, fill=(235, 65, 55), outline=(140, 30, 25), width=3)
+            draw.text((205, 1465), "1 FUEL PELLET", font=self.font_card, fill=(40, 45, 50))
+            draw.text((515, 1340), "=", font=self.font_word, fill=(235, 165, 40))
+            # كومة طن الفحم
+            for cx_c, cy_c in [(690, 1395), (745, 1395), (800, 1395), (715, 1350), (770, 1350), (742, 1305)]:
+                draw.regular_polygon((cx_c, cy_c, 34), n_sides=6, fill=(55, 60, 65), outline=(25, 30, 35))
+            draw.text((645, 1465), "1 TON OF COAL", font=self.font_card, fill=(40, 45, 50))
+        elif seg_idx == 11:
+            # قصاصات الاحتفال الملونة (Confetti) في المشهد الختامي
+            for c_x, c_y0, c_s, c_col in self.confetti:
+                cy_now = (c_y0 + seg_progress * 950) % 1920
+                cx_now = c_x + math.sin(global_time * 5 + c_x) * 18
+                draw.rectangle([cx_now - c_s, cy_now - c_s * 1.6, cx_now + c_s, cy_now + c_s * 1.6], fill=c_col)
+
+        # 11. الكابشن العلوي كلمة بكلمة (Word-by-Word Pop-in Top Center Caption) مثل الفيديو الأصلي بالضبط!
+        if current_word:
+            w_text = current_word.upper()
+            bbox = draw.textbbox((0, 0), w_text, font=self.font_word)
+            tw = bbox[2] - bbox[0]
+            wx_pos = (1080 - tw) // 2
+            wy_pos = 360
+
+            for dx in (-5, -3, 0, 3, 5):
+                for dy in (-5, -3, 0, 3, 5):
+                    if dx != 0 or dy != 0:
+                        draw.text((wx_pos + dx, wy_pos + dy), w_text, font=self.font_word, fill=(35, 45, 55))
+            draw.text((wx_pos, wy_pos), w_text, font=self.font_word, fill=(255, 255, 255))
+
+        return img
 
 
 def upload_to_youtube(video_path, title, refresh_token):
@@ -715,9 +721,9 @@ def upload_to_youtube(video_path, title, refresh_token):
 
     body = {
         "snippet": {
-            "title": f"{title[:80]} #علوم #هندسة #كيف_يعمل #shorts",
-            "description": f"{title}\n\nشرح علمي وهندسي مبسط ثلاثي الأبعاد لكيفية عمل سخان المياه من الداخل.\n#علوم #هندسة #معلومات #تكنولوجيا #كيف_يعمل #shorts",
-            "tags": ["كيف يعمل السخان", "هندسة", "علوم", "معلومات عامة", "3d animation", "shorts"],
+            "title": f"{title[:80]} #engineering #science #nuclear #howitworks #shorts",
+            "description": f"{title}\n\nStep-by-step animated explainer on how a nuclear power plant works.\n#engineering #science #howitworks #nuclearpower #technology #shorts",
+            "tags": ["nuclear power plant", "how it works", "engineering", "science", "animation", "shorts"],
             "categoryId": "28"
         },
         "status": {
@@ -727,7 +733,7 @@ def upload_to_youtube(video_path, title, refresh_token):
     }
     media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
     res = youtube.videos().insert(part="snippet,status", body=body, media_body=media).execute()
-    print(f"[YouTube] تم الرفع بنجاح على قناتك: https://youtu.be/{res['id']}", flush=True)
+    print(f"[YouTube] Uploaded successfully: https://youtu.be/{res['id']}", flush=True)
 
 
 def upload_to_facebook_reels(video_path, title, page_id):
@@ -758,58 +764,101 @@ def upload_to_facebook_reels(video_path, title, page_id):
             "upload_phase": "finish",
             "video_id": video_id,
             "video_state": "PUBLISHED",
-            "description": f"{title} 🔍🔥\n\n#علوم #هندسة #كيف_يعمل #معلومات #reels",
+            "description": f"{title} ⚛️⚡\n\n#engineering #science #howitworks #reels",
             "access_token": META_ACCESS_TOKEN
         },
         timeout=60
     ).json()
-    print(f"[Facebook Reels] تم النشر بنجاح: {finish_res}", flush=True)
+    print(f"[Facebook Reels] Published: {finish_res}", flush=True)
 
 
 def assemble_and_publish():
-    print(f"🚀 إجمالي حسابات ومفاتيح Hugging Face الجاهزة: {len(HF_TOKENS)} مفتاحاً", flush=True)
-    uploaded_map = discover_uploaded_images_map()
-    print(f"📸 الصور المرفوعة المكتشفة في المستودع: {len(uploaded_map)} صورة ({sorted(uploaded_map.keys())})", flush=True)
+    title = "How to Build a Nuclear Power Plant Step-by-Step! ⚛️⚡"
+    font_path = ensure_english_font()
+    renderer = NuclearPlantRenderer(font_path)
 
-    story = get_water_heater_explainer_storyboard()
-    print(f"🔬 عنوان الفيديو: {story['title']} ({len(story['scenes'])} مشهداً علمياً)", flush=True)
+    print("🎙️ Step 1: Generating Natural English Voiceover & SFX for all 12 stages...", flush=True)
+    seg_audios = []
+    seg_durations = []
+    for idx, seg in enumerate(NUCLEAR_PLANT_SEGMENTS):
+        wav_file = f"seg_{idx}.wav"
+        dur = build_segment_audio(idx, seg, wav_file)
+        seg_audios.append(wav_file)
+        seg_durations.append(dur)
+        print(f"  ✓ Stage {idx + 1}/12 audio ready ({dur}s)", flush=True)
 
-    scene_videos = []
-    total_duration = 0.0
-    for idx, scene in enumerate(story["scenes"]):
-        print(f"--- جاري إنتاج وتحريك اللقطة الهندسية {idx + 1} من {len(story['scenes'])} ---", flush=True)
-        clip, dur = create_scene_assets(idx, scene, uploaded_map)
-        scene_videos.append(clip)
-        total_duration += dur
+    total_duration = round(sum(seg_durations), 2)
+    print(f"⏱️ Total Explainer Duration: {total_duration}s ({round(total_duration / 60, 2)} minutes)!", flush=True)
 
-    print(f"⏱️ إجمالي مدة الفيديو النهائية: {round(total_duration, 1)} ثانية ({round(total_duration / 60, 2)} دقيقة)!", flush=True)
+    with open("audio_list.txt", "w") as f:
+        for w in seg_audios:
+            f.write(f"file '{w}'\n")
 
-    with open("inputs.txt", "w") as f:
-        for v in scene_videos:
-            f.write(f"file '{v}'\n")
-
-    final_video = "final_short.mp4"
-    print("جاري المونتاج النهائي...", flush=True)
-
+    master_audio = "master_audio.wav"
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
-        "-i", "inputs.txt",
-        "-vf", "scale=1080:1920,setsar=1,format=yuv420p",
-        "-r", "30", "-c:v", "libx264", "-preset", "fast", "-profile:v", "high",
-        "-level", "4.0", "-crf", "16", "-c:a", "aac", "-ar", "44100",
-        "-ac", "2", "-b:a", "192k", "-movflags", "+faststart", final_video
+        "-i", "audio_list.txt", "-c", "copy", master_audio
     ], check=True)
 
+    print("🎬 Step 2: Rendering Continuous 30-FPS Programmatic Animation Stream...", flush=True)
+    fps = 30
+    raw_video = "raw_programmatic.mp4"
+    ffmpeg_proc = subprocess.Popen([
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-f", "rawvideo", "-vcodec", "rawvideo",
+        "-s", "1080x1920", "-pix_fmt", "rgb24", "-r", str(fps),
+        "-i", "-",
+        "-i", master_audio,
+        "-map", "0:v", "-map", "1:a",
+        "-c:v", "libx264", "-preset", "fast", "-profile:v", "high", "-crf", "16",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "192k",
+        "-shortest", raw_video
+    ], stdin=subprocess.PIPE)
+
+    global_t = 0.0
+    dt = 1.0 / fps
+    for seg_idx, seg in enumerate(NUCLEAR_PLANT_SEGMENTS):
+        seg_dur = seg_durations[seg_idx]
+        seg_frames = max(int(round(seg_dur * fps)), 1)
+        words = re.sub(r'[,.?!—-]', '', seg["narration"]).split() or [""]
+
+        for f_i in range(seg_frames):
+            prog = f_i / max(seg_frames - 1, 1)
+            w_idx = min(int(prog * len(words)), len(words) - 1)
+            curr_word = words[w_idx]
+
+            frame_img = renderer.render_frame(seg_idx, prog, global_t, curr_word)
+            ffmpeg_proc.stdin.write(frame_img.tobytes())
+            global_t += dt
+
+    ffmpeg_proc.stdin.close()
+    ffmpeg_proc.wait()
+
+    final_video = "final_short.mp4"
+    # إضافة خلفية صوتية خفيفة جداً وناعمة تدمج الصوت والمؤثرات باحترافية
+    subprocess.run([
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-i", raw_video,
+        "-f", "lavfi", "-i", "anoisesrc=c=pink:a=0.006",
+        "-filter_complex",
+        "[1:a]lowpass=f=260[bg];[0:a]volume=1.15[fg];[fg][bg]amix=inputs=2:duration=first:dropout_transition=1[a]",
+        "-map", "0:v", "-map", "[a]",
+        "-c:v", "copy", "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "192k",
+        "-movflags", "+faststart", final_video
+    ], check=True)
+
+    print("🚀 Step 3: Publishing to YouTube & Facebook Reels...", flush=True)
     for token in YT_REFRESH_TOKENS:
         try:
-            upload_to_youtube(final_video, story["title"], token)
+            upload_to_youtube(final_video, title, token)
         except Exception as e:
             print(f"[YouTube Error] {e}", flush=True)
 
     if META_ACCESS_TOKEN:
         for page_id in FB_PAGE_IDS:
             try:
-                upload_to_facebook_reels(final_video, story["title"], page_id)
+                upload_to_facebook_reels(final_video, title, page_id)
             except Exception as e:
                 print(f"[Facebook Error] {e}", flush=True)
 
