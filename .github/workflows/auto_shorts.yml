@@ -5,25 +5,18 @@ on:
     - cron: '0 18 * * *'
   workflow_dispatch:
     inputs:
-      teacher_voice:
-        description: 'اختر صوت المدرس في الشرح العلمي'
+      english_voice:
+        description: 'Select Realistic English Narrator Voice'
         required: true
-        default: 'ar-JO-TaimNeural'
+        default: 'en-US-AndrewMultilingualNeural'
         type: choice
         options:
-          - ar-JO-TaimNeural
-          - ar-EG-ShakirNeural
-          - ar-SA-HamedNeural
-      explainer_topic:
-        description: 'موضوع الفيديو الهندسي (3D X-Ray Explainer)'
-        required: true
-        default: 'water_heater_15_scenes'
-        type: choice
-        options:
-          - water_heater_15_scenes
-          - custom_engineering_topic
+          - en-US-AndrewMultilingualNeural
+          - en-US-BrianMultilingualNeural
+          - en-US-ChristopherNeural
+          - en-GB-RyanNeural
       custom_prompt:
-        description: 'اتركه فارغاً لفيديو السخان (أو اكتب اسم جهاز آخر لشرحه مستقبلاً)'
+        description: 'Topic or Custom Prompt (Optional)'
         required: false
         default: ''
         type: string
@@ -42,12 +35,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install FFmpeg, Libraqm & Dependencies
+      - name: Install FFmpeg & Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libfreetype6-dev libfribidi-dev libharfbuzz-dev libraqm-dev fonts-hosny-amiri
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
           pip install --upgrade pip
-          pip install requests "httpx[http2]" google-api-python-client google-auth google-auth-oauthlib edge-tts gradio_client huggingface_hub pillow arabic-reshaper python-bidi
+          pip install requests "httpx[http2]" google-api-python-client google-auth google-auth-oauthlib edge-tts gradio_client huggingface_hub pillow
 
       - name: Generate and Publish Video
         env:
@@ -57,10 +50,8 @@ jobs:
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKENS: ${{ secrets.YT_REFRESH_TOKENS }}
           FB_PAGE_IDS: ${{ secrets.FB_PAGE_IDS }}
-          IG_USER_IDS: ${{ secrets.IG_USER_IDS }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
-          TEACHER_VOICE: ${{ inputs.teacher_voice }}
-          EXPLAINER_TOPIC: ${{ inputs.explainer_topic }}
+          ENGLISH_VOICE: ${{ inputs.english_voice }}
           CUSTOM_PROMPT: ${{ inputs.custom_prompt }}
         run: |
           python main.py
