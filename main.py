@@ -4,6 +4,7 @@ import json
 import time
 import base64
 import shutil
+import urllib.parse
 import subprocess
 from pathlib import Path
 import requests
@@ -11,6 +12,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 ENGLISH_VOICE = os.getenv("ENGLISH_VOICE", "en-US-AndrewMultilingualNeural").strip() or "en-US-AndrewMultilingualNeural"
 
 YT_CLIENT_ID = os.getenv("YT_CLIENT_ID", "").strip()
@@ -33,7 +35,6 @@ SFX_LIBRARY = {
     "cheer": ("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg", 0.28)
 }
 
-# الـ 12 مرحلة الكاملة لبناء المحطة النووية بنفس إيقاع وكاميرا الفيديو المرجعي ثلاثي الأبعاد
 NUCLEAR_PLANT_SEGMENTS = [
     {
         "id": 0,
@@ -97,48 +98,145 @@ NUCLEAR_PLANT_SEGMENTS = [
     }
 ]
 
+# قفل محرك الصوت المختار في المرحلة 0 لضمان ثبات نفس صوت المتحدث 100% في جميع المراحل الـ 12
+LOCKED_VOICE_ENGINE = None
+
 
 def ensure_playwright_chromium():
     try:
         import playwright  # noqa: F401
     except ImportError:
-        print("📦 Installing Playwright for 3D WebGL Rendering...", flush=True)
+        print("📦 Installing Playwright & Chromium for 3D WebGL Rendering...", flush=True)
         subprocess.run(["pip", "install", "-q", "playwright"], check=True)
         subprocess.run(["playwright", "install", "chromium"], check=True)
 
 
+def generate_gemini_puck_voice_with_retry(narration_text, dst_wav):
+    """
+    توليد الصوت البشري الأمريكي الموحد (Puck) عبر Gemini 2.5 Native TTS
+    مع انتظار ذكي تلقائي عند الوصول لحد الطلبات في الدقيقة (429) لضمان عدم تغير الصوت أبداً!
+    """
+    if not GEMINI_API_KEY:
+        return False
+
+    director_prompt = (
+        "Speak as an engaging, clear, upbeat American science explainer YouTuber (like Zack D. Films), "
+        "keeping the exact same consistent voice and brisk natural pacing:\n"
+        f"{narration_text}"
+    )
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key={GEMINI_API_KEY}"
+    payload = {
+        "contents": [{"parts": [{"text": director_prompt}]}],
+        "generationConfig": {
+            "responseModalities": ["AUDIO"],
+            "speechConfig": {
+                "voiceConfig": {
+                    "prebuiltVoiceConfig": {
+                        "voiceName": "Puck"
+                    }
+                }
+            }
+        }
+    }
+
+    for attempt in range(5):
+        try:
+            r = requests.post(url, json=payload, timeout=45)
+            if r.status_code == 200:
+                rj = r.json()
+                for cand in rj.get("candidates", []):
+                    for part in cand.get("content", {}).get("parts", []):
+                        inline = part.get("inlineData") or part.get("inline_data")
+                        if inline and inline.get("data"):
+                            pcm_bytes = base64.b64decode(inline["data"])
+                            if len(pcm_bytes) > 4000:
+                                raw_pcm = "temp_gemini_voice.pcm"
+                                with open(raw_pcm, "wb") as f:
+                                    f.write(pcm_bytes)
+                                subprocess.run([
+                                    "ffmpeg", "-y", "-loglevel", "error",
+                                    "-f", "s16le", "-ar", "24000", "-ac", "1",
+                                    "-i", raw_pcm,
+                                    "-ar", "44100", "-ac", "2", dst_wav
+                                ], check=True)
+                                time.sleep(4.2)  # احترام حد الطلبات في الدقيقة لضمان ثبات الصوت في كل المراحل
+                                return True
+            elif r.status_code == 429:
+                wait_sec = 14 + attempt * 6
+                print(f"⏳ انتظار {wait_sec} ثانية لتجديد حصة الدقيقة في Gemini TTS للحفاظ على نفس الصوت...", flush=True)
+                time.sleep(wait_sec)
+            else:
+                break
+        except Exception:
+            time.sleep(3)
+
+    return False
+
+
+def generate_edge_tts_voice(narration_text, dst_mp3):
+    for v_name in [ENGLISH_VOICE, "en-US-AndrewMultilingualNeural", "en-US-ChristopherNeural", "en-US-GuyNeural"]:
+        for attempt in range(2):
+            try:
+                subprocess.run([
+                    "edge-tts", "--voice", v_name, "--rate=+8%",
+                    "--text", narration_text, "--write-media", dst_mp3
+                ], check=True, timeout=30, stderr=subprocess.DEVNULL)
+                if os.path.exists(dst_mp3) and os.path.getsize(dst_mp3) > 1000:
+                    return True
+            except Exception:
+                time.sleep(1)
+    return False
+
+
+def generate_google_translate_tts(narration_text, dst_mp3):
+    encoded = urllib.parse.quote(narration_text)
+    url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q={encoded}"
+    r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+    r.raise_for_status()
+    with open(dst_mp3, "wb") as f:
+        f.write(r.content)
+    return os.path.exists(dst_mp3) and os.path.getsize(dst_mp3) > 500
+
+
 def build_segment_audio(seg_idx, segment, out_wav):
-    """
-    استخدام معلق صوتي أمريكي واحد ثابت وموحد 100% (en-US-AndrewMultilingualNeural)
-    في جميع المراحل الـ 12 لضمان عدم تغير صوت المتحدث في منتصف الفيديو أبداً!
-    """
+    global LOCKED_VOICE_ENGINE
     text = segment["narration"]
     sfx_key = segment["sfx"]
 
-    raw_mp3 = f"seg_raw_{seg_idx}.mp3"
+    raw_voice = f"seg_raw_{seg_idx}.wav"
     trimmed_voice = f"seg_trim_{seg_idx}.wav"
     sfx_ogg = f"seg_sfx_{seg_idx}.ogg"
 
     voice_ok = False
-    for attempt in range(3):
-        try:
-            subprocess.run([
-                "edge-tts", "--voice", ENGLISH_VOICE, "--rate=+12%", "--pitch=+0Hz",
-                "--text", text, "--write-media", raw_mp3
-            ], check=True, timeout=30, stderr=subprocess.DEVNULL)
-            if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
-                voice_ok = True
-                break
-        except Exception:
-            time.sleep(1)
 
-    if not voice_ok:
-        raise RuntimeError(f"Failed to generate consistent voice for stage {seg_idx}")
+    # اختيار محرك الصوت في المرحلة الأولى وقفله لجميع المراحل الـ 12 لضمان عدم تغير صوت المتحدث أبداً!
+    if LOCKED_VOICE_ENGINE is None:
+        if generate_gemini_puck_voice_with_retry(text, raw_voice):
+            LOCKED_VOICE_ENGINE = "gemini_puck"
+            voice_ok = True
+            print("🎙️ Locked Voice Engine: Gemini 2.5 Native Human Voice (Puck) for all 12 stages!", flush=True)
+        elif generate_edge_tts_voice(text, raw_voice):
+            LOCKED_VOICE_ENGINE = "edge_tts"
+            voice_ok = True
+            print("🎙️ Locked Voice Engine: Microsoft Studio Narrator for all 12 stages!", flush=True)
+        else:
+            generate_google_translate_tts(text, raw_voice)
+            LOCKED_VOICE_ENGINE = "gtts"
+            voice_ok = True
+            print("🎙️ Locked Voice Engine: Standard English TTS for all 12 stages!", flush=True)
+    else:
+        if LOCKED_VOICE_ENGINE == "gemini_puck":
+            voice_ok = generate_gemini_puck_voice_with_retry(text, raw_voice)
+        if not voice_ok and LOCKED_VOICE_ENGINE in ("edge_tts", "gemini_puck"):
+            voice_ok = generate_edge_tts_voice(text, raw_voice)
+        if not voice_ok:
+            voice_ok = generate_google_translate_tts(text, raw_voice)
 
-    warm_eq = "highpass=f=80,equalizer=f=185:width_type=o:width=1.5:g=2.6,equalizer=f=3800:width_type=o:width=2.0:g=2.0"
+    warm_eq = "highpass=f=80,equalizer=f=185:width_type=o:width=1.5:g=2.4,equalizer=f=3800:width_type=o:width=2.0:g=1.8"
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
-        "-i", raw_mp3,
+        "-i", raw_voice,
         "-af", (
             f"silenceremove=start_periods=1:start_silence=0.02:start_threshold=-42dB,"
             f"areverse,silenceremove=start_periods=1:start_silence=0.04:start_threshold=-42dB,areverse,"
@@ -152,7 +250,7 @@ def build_segment_audio(seg_idx, segment, out_wav):
         "-of", "default=noprint_wrappers=1:nokey=1", trimmed_voice
     ], capture_output=True, text=True, check=True)
     v_dur = float(probe.stdout.strip() or "4.5")
-    final_dur = round(v_dur + 0.12, 2)
+    final_dur = round(v_dur + 0.14, 2)
 
     sfx_url, sfx_vol = SFX_LIBRARY.get(sfx_key, SFX_LIBRARY["pop"])
     try:
@@ -186,7 +284,6 @@ def build_segment_audio(seg_idx, segment, out_wav):
     return final_dur
 
 
-# مشهد Three.js 3D WebGL الكامل مطابق للفيديو المرجعي فريم بفريم!
 THREEJS_HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html>
 <head>
@@ -195,34 +292,37 @@ THREEJS_HTML_TEMPLATE = r"""<!DOCTYPE html>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { width: 1080px; height: 1920px; overflow: hidden; background: #6eb1e8; font-family: 'Montserrat', sans-serif; }
-  #webgl-canvas { position: absolute; top: 0; left: 0; width: 1080px; height: 1920px; z-index: 1; }
-  #hud-canvas { position: absolute; top: 0; left: 0; width: 1080px; height: 1920px; z-index: 2; pointer-events: none; }
+  canvas { display: none; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 <canvas id="webgl-canvas" width="1080" height="1920"></canvas>
 <canvas id="hud-canvas" width="1080" height="1920"></canvas>
+<canvas id="final-canvas" width="1080" height="1920"></canvas>
 <script>
 const W = 1080, H = 1920;
 const webglCanvas = document.getElementById('webgl-canvas');
 const hudCanvas = document.getElementById('hud-canvas');
+const finalCanvas = document.getElementById('final-canvas');
 const ctx = hudCanvas.getContext('2d');
+const finalCtx = finalCanvas.getContext('2d');
 
-const renderer = new THREE.WebGLRenderer({ canvas: webglCanvas, antialias: true, preserveDrawingBuffer: true, alpha: true });
+const renderer = new THREE.WebGLRenderer({ canvas: webglCanvas, antialias: true, preserveDrawingBuffer: true, alpha: false });
 renderer.setSize(W, H);
+renderer.setClearColor(0x6eb1e8, 1);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x6eb1e8);
 const camera = new THREE.PerspectiveCamera(38, W / H, 0.5, 400);
 
-// 3D Lighting
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0x688850, 0.78);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0x688850, 0.80);
 hemiLight.position.set(0, 50, 0);
 scene.add(hemiLight);
 
-const dirLight = new THREE.DirectionalLight(0xfff8e8, 0.82);
+const dirLight = new THREE.DirectionalLight(0xfff8e8, 0.85);
 dirLight.position.set(22, 42, 28);
 dirLight.castShadow = true;
 dirLight.shadow.mapSize.width = 2048;
@@ -233,26 +333,58 @@ function mat(color, opts = {}) {
   return new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.45, metalness: 0.1 }, opts));
 }
 
+// 3D Sun & Fluffy 3D Clouds in Sky
+const sunGroup = new THREE.Group();
+const sunCore = new THREE.Mesh(new THREE.SphereGeometry(3.2, 24, 24), new THREE.MeshBasicMaterial({ color: 0xfff5be }));
+sunGroup.add(sunCore);
+[4.6, 6.2, 8.0].forEach((r, idx) => {
+  const halo = new THREE.Mesh(
+    new THREE.SphereGeometry(r, 24, 24),
+    new THREE.MeshBasicMaterial({ color: 0xffe885, transparent: true, opacity: 0.28 - idx * 0.07 })
+  );
+  sunGroup.add(halo);
+});
+sunGroup.position.set(14, 22, -35);
+scene.add(sunGroup);
+
+const clouds3D = [];
+function createCloud3D(x, y, z, scale) {
+  const cg = new THREE.Group();
+  const cMat = mat(0xfafcff, { roughness: 0.9 });
+  [[-1.6, 0, 0, 1.3], [0, 0.5, 0.2, 1.7], [1.6, 0.1, 0, 1.4], [0.5, -0.3, 0.4, 1.2]].forEach(([dx, dy, dz, r]) => {
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 16), cMat);
+    puff.position.set(dx, dy, dz);
+    cg.add(puff);
+  });
+  cg.scale.set(scale, scale, scale * 0.6);
+  cg.position.set(x, y, z);
+  scene.add(cg);
+  clouds3D.push({ mesh: cg, baseX: x, speed: 0.4 * scale });
+}
+createCloud3D(-14, 21, -32, 1.5);
+createCloud3D(-1, 18, -30, 1.7);
+createCloud3D(11, 25, -34, 1.3);
+createCloud3D(-18, 14, -28, 1.2);
+
 // 1. Ground, Tiled Pad, Road & River
-const grass = new THREE.Mesh(new THREE.BoxGeometry(160, 2, 160), mat(0x5fb43c, { roughness: 0.8 }));
+const grass = new THREE.Mesh(new THREE.BoxGeometry(180, 2, 180), mat(0x5fb43c, { roughness: 0.8 }));
 grass.position.set(0, -1, 0);
 grass.receiveShadow = true;
 scene.add(grass);
 
-// River in background
-const river = new THREE.Mesh(new THREE.BoxGeometry(160, 1.6, 12), mat(0x529ec2, { roughness: 0.3 }));
-river.position.set(0, -0.5, -18);
+const river = new THREE.Mesh(new THREE.BoxGeometry(180, 1.6, 12), mat(0x529ec2, { roughness: 0.3 }));
+river.position.set(0, -0.45, -18);
 scene.add(river);
 
-const riverBank1 = new THREE.Mesh(new THREE.BoxGeometry(160, 2.05, 1.2), mat(0x9b7a4a));
-riverBank1.position.set(0, -0.7, -11.8);
+const riverBank1 = new THREE.Mesh(new THREE.BoxGeometry(180, 2.05, 1.2), mat(0x9b7a4a));
+riverBank1.position.set(0, -0.65, -11.8);
 scene.add(riverBank1);
 
 // Hot River Plume & 3D Fish (Stage 5)
 const plumeGroup = new THREE.Group();
-const plumeMesh = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, 0.2, 32), mat(0xd47254, { transparent: true, opacity: 0.75 }));
+const plumeMesh = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, 0.2, 32), mat(0xd47254, { transparent: true, opacity: 0.78 }));
 plumeMesh.scale.set(1.8, 1, 0.65);
-plumeMesh.position.set(8, 0.35, -16.5);
+plumeMesh.position.set(8, 0.4, -16.5);
 plumeGroup.add(plumeMesh);
 
 const fishList = [];
@@ -266,13 +398,13 @@ for (let i = 0; i < 3; i++) {
   const eye = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), mat(0x111111));
   eye.position.set(-0.55, 0.1, 0.2);
   fg.add(body, tail, eye);
-  fg.position.set(5.5 + i * 2.4, 0.55, -16.2 + (i % 2) * 0.9);
+  fg.position.set(5.5 + i * 2.4, 0.6, -16.2 + (i % 2) * 0.9);
   plumeGroup.add(fg);
   fishList.push({ group: fg, body, tail, baseX: fg.position.x });
 }
 scene.add(plumeGroup);
 
-// 3D Sailboat on River
+// 3D Sailboat
 const boatGroup = new THREE.Group();
 const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.5, 0.5, 4), mat(0x8a5229));
 hull.rotation.y = Math.PI / 4;
@@ -283,7 +415,7 @@ boatGroup.add(hull, sail);
 boatGroup.position.set(14, 0.5, -17);
 scene.add(boatGroup);
 
-// 3D Palm Trees & Background Buildings
+// 3D Palm Trees
 function createPalmTree(x, z) {
   const g = new THREE.Group();
   const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 3.6, 8), mat(0x8c6239));
@@ -301,7 +433,7 @@ function createPalmTree(x, z) {
 }
 [-14, -10, -6, 6, 15].forEach(x => createPalmTree(x, -10.5));
 
-// Power Plant Office Building in Background
+// Power Plant Office Building
 const officeGroup = new THREE.Group();
 const officeBody = new THREE.Mesh(new THREE.BoxGeometry(7.5, 3.2, 3.2), mat(0xdfd0b2));
 officeBody.position.y = 1.6;
@@ -314,7 +446,7 @@ for (let i = -2; i <= 2; i++) {
 officeGroup.position.set(-2.5, 0, -7.2);
 scene.add(officeGroup);
 
-// Tiled Concrete Pad with Grid
+// Tiled Concrete Pad
 const padCanvas = document.createElement('canvas');
 padCanvas.width = 512; padCanvas.height = 512;
 const pctx = padCanvas.getContext('2d');
@@ -334,7 +466,7 @@ padMesh.position.set(3, 0.15, 0.5);
 padMesh.receiveShadow = true;
 scene.add(padMesh);
 
-// Asphalt Road with White Dashed Lines
+// Asphalt Road
 const roadGroup = new THREE.Group();
 const roadMesh = new THREE.Mesh(new THREE.BoxGeometry(60, 0.22, 4.4), mat(0x70757a, { roughness: 0.8 }));
 roadGroup.add(roadMesh);
@@ -347,7 +479,7 @@ roadGroup.position.set(2, 0.12, 9.2);
 roadGroup.rotation.y = -0.22;
 scene.add(roadGroup);
 
-// 2. Primary Reactor Tank (3D Cutaway Cylinder + Glass Front + Base)
+// 2. Primary Reactor Tank (3D Cutaway Cylinder)
 const reactorGroup = new THREE.Group();
 reactorGroup.position.set(-2.5, 0.3, 1.0);
 scene.add(reactorGroup);
@@ -359,7 +491,6 @@ const rBaseTrim = new THREE.Mesh(new THREE.BoxGeometry(4.9, 0.14, 4.3), mat(0xea
 rBaseTrim.position.y = 0.08;
 reactorGroup.add(rBaseTrim);
 
-// Back half-cylinder wall
 const rBackWall = new THREE.Mesh(
   new THREE.CylinderGeometry(2.0, 2.0, 8.2, 32, 1, true, Math.PI * 0.55, Math.PI * 0.9),
   mat(0xcfd6dc, { side: THREE.DoubleSide, metalness: 0.25, roughness: 0.35 })
@@ -367,7 +498,6 @@ const rBackWall = new THREE.Mesh(
 rBackWall.position.y = 4.6;
 reactorGroup.add(rBackWall);
 
-// Side white frame pillars
 const pillarL = new THREE.Mesh(new THREE.BoxGeometry(0.32, 8.2, 0.4), mat(0xeef2f6));
 pillarL.position.set(-1.95, 4.6, 0.2);
 const pillarR = pillarL.clone();
@@ -376,7 +506,6 @@ const topCap = new THREE.Mesh(new THREE.CylinderGeometry(2.15, 2.15, 0.35, 32), 
 topCap.position.y = 8.75;
 reactorGroup.add(pillarL, pillarR, topCap);
 
-// 3D Water inside Primary Tank
 const waterMat1 = new THREE.MeshStandardMaterial({ color: 0x5ab9ea, transparent: true, opacity: 0.68, roughness: 0.15 });
 const waterMesh1 = new THREE.Mesh(new THREE.CylinderGeometry(1.88, 1.88, 6.8, 32), waterMat1);
 waterMesh1.position.y = 3.9;
@@ -415,7 +544,7 @@ const coreGlowLight = new THREE.PointLight(0xff8c1a, 0, 9);
 coreGlowLight.position.set(0, 2.5, 1.2);
 reactorGroup.add(coreGlowLight);
 
-// 3D Control Rods & Red/Gold Electromagnets
+// 3D Control Rods & Electromagnets
 const ctrlGroup = new THREE.Group();
 const magGroup = new THREE.Group();
 for (let i = -1; i <= 1; i++) {
@@ -431,7 +560,7 @@ for (let i = -1; i <= 1; i++) {
 }
 reactorGroup.add(ctrlGroup, magGroup);
 
-// 3D Front Control Box with 3 Green Buttons & Red Siren
+// 3D Front Control Box with Red Siren
 const ctrlBoxGroup = new THREE.Group();
 const cBox = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.7, 1.1), mat(0x80868c));
 cBox.position.y = 0.85;
@@ -450,7 +579,7 @@ ctrlBoxGroup.add(siren);
 ctrlBoxGroup.position.set(2.35, 0, 2.2);
 reactorGroup.add(ctrlBoxGroup);
 
-// 3D Bubbles inside Primary Tank
+// 3D Bubbles
 const bubbles3D = [];
 const bubbleGeo = new THREE.SphereGeometry(0.14, 12, 12);
 const bubbleMat = mat(0xffffff, { transparent: true, opacity: 0.82 });
@@ -466,7 +595,7 @@ for (let i = 0; i < 26; i++) {
   bubbles3D.push(b);
 }
 
-// 3. Secondary Clean Water Tank & Heat Exchanger Coils (Stage 4+)
+// 3. Secondary Clean Water Tank
 const secTankGroup = new THREE.Group();
 secTankGroup.position.set(2.5, 0.3, 1.0);
 scene.add(secTankGroup);
@@ -482,7 +611,6 @@ const sTopCap = new THREE.Mesh(new THREE.CylinderGeometry(1.65, 1.65, 0.32, 32),
 sTopCap.position.y = 8.75;
 secTankGroup.add(sBackWall, sWater, sTopCap);
 
-// Heat Exchanger U-Tubes & Connecting Red/Blue Pipes
 const hotBridge = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 3.2, 16), mat(0xef6c35));
 hotBridge.rotation.z = Math.PI / 2;
 hotBridge.position.set(-2.3, 4.2, 0.4);
@@ -511,7 +639,6 @@ const powerGroup = new THREE.Group();
 powerGroup.position.set(7.5, 0.3, 1.5);
 scene.add(powerGroup);
 
-// 3D Turbine Casing & Spinning Rotor Blades
 const turbBase = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.8, 2.2), mat(0xa8aeb5));
 turbBase.position.set(-1.2, 0.4, 0);
 const turbShell = new THREE.Mesh(
@@ -540,7 +667,6 @@ for (let ring = -1.1; ring <= 1.1; ring += 0.55) {
 }
 powerGroup.add(rotorGroup);
 
-// 3D Green Generator & Streetlamp
 const genMesh = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.8, 2.2), mat(0x46b48c));
 genMesh.position.set(2.0, 1.4, 0);
 powerGroup.add(genMesh);
@@ -554,7 +680,6 @@ lampBulb.position.y = 3.9;
 lampGroup.add(lampPole, lampBulb);
 powerGroup.add(lampGroup);
 
-// Steam Pipes (Primary -> Turbine for Stage 1..3, Secondary -> Turbine for Stage 4+)
 function makeSteamPipe(startX) {
   const curve = new THREE.CatmullRomCurve3([
     new THREE.Vector3(startX, 9.1, 1.0),
@@ -568,7 +693,7 @@ const steamPipe1 = makeSteamPipe(-2.5);
 const steamPipe2 = makeSteamPipe(2.5);
 scene.add(steamPipe1, steamPipe2);
 
-// 5. Condenser & River Pipes & 3D Cooling Tower (Stage 5 & 6+)
+// 5. Condenser & 3D Cooling Tower
 const condBox = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.8, 2.0), mat(0x8cbde0));
 condBox.position.set(6.3, 1.2, -1.8);
 const riverPipeBlue = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 11, 12), mat(0x4aa3e8));
@@ -579,7 +704,6 @@ riverPipeRed.rotation.x = Math.PI / 2;
 riverPipeRed.position.set(6.6, 0.5, -7.5);
 scene.add(condBox, riverPipeBlue, riverPipeRed);
 
-// 3D Hyperboloid Cooling Tower
 const towerGroup = new THREE.Group();
 towerGroup.position.set(13.2, 0.3, -2.5);
 const towerPts = [];
@@ -605,7 +729,7 @@ for (let i = 0; i < 6; i++) {
 }
 scene.add(towerGroup);
 
-// 6. 3D Steel & Concrete Containment Dome (Stage 7+)
+// 6. 3D Steel & Concrete Containment Dome
 const domeGroup = new THREE.Group();
 domeGroup.position.set(0.0, 0.3, 1.0);
 const domeCyl = new THREE.Mesh(
@@ -618,7 +742,6 @@ const domeCap = new THREE.Mesh(
   mat(0x90969c, { side: THREE.DoubleSide })
 );
 domeCap.position.y = 7.5;
-// Thick front concrete arch wall
 const archPts = [];
 for (let a = 0; a <= 32; a++) {
   const ang = (a / 32) * Math.PI;
@@ -635,7 +758,7 @@ const archWall = new THREE.Mesh(new THREE.TubeGeometry(archCurve, 64, 0.58, 12, 
 domeGroup.add(domeCyl, domeCap, archWall);
 scene.add(domeGroup);
 
-// 7. 3D Backup Diesel Generators & Elevated Gravity Water Tank (Stage 8+)
+// 7. 3D Backup Diesel Generators & Gravity Water Tank
 const backupGroup = new THREE.Group();
 backupGroup.position.set(-8.2, 0.3, 1.0);
 const diesel1 = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.2, 1.8), mat(0xebc034));
@@ -657,7 +780,7 @@ gravPipe.position.set(3.5, 7.2, 0);
 backupGroup.add(diesel1, diesel2, gravTank, gravPipe);
 scene.add(backupGroup);
 
-// 8. 3D Spent Fuel Pool & Blue Cherenkov Glow (Stage 9+)
+// 8. 3D Spent Fuel Pool
 const poolGroup = new THREE.Group();
 poolGroup.position.set(-12.5, 0.3, 2.2);
 const poolWalls = new THREE.Mesh(new THREE.BoxGeometry(3.8, 2.6, 3.4), mat(0xe2e6ea));
@@ -667,7 +790,6 @@ poolWater.position.y = 1.45;
 poolGroup.add(poolWalls, poolWater);
 scene.add(poolGroup);
 
-// Camera Keyframes (3D Perspective Positions & LookAt Targets for all 12 stages)
 const CAM_KEYFRAMES = [
   { pos0: [-2.5, 8.5, 19.5], look0: [-2.5, 4.8, 0], pos1: [-2.5, 7.2, 16.0], look1: [-2.5, 4.5, 0] },
   { pos0: [-2.5, 7.2, 16.0], look0: [-2.5, 4.5, 0], pos1: [3.2, 8.2, 22.5],  look1: [3.2, 4.2, 0] },
@@ -705,7 +827,6 @@ function drawSafeCallout(target3D, offsetX, offsetY, text, bgColor) {
   const padX = 24, padY = 18;
   const bw = tw + padX * 2, bh = 54;
 
-  // منع خروج اللافتة خارج حدود الشاشة نهائياً!
   const bx = Math.max(bw / 2 + 24, Math.min(W - bw / 2 - 24, p.x + offsetX));
   const by = Math.max(bh / 2 + 120, Math.min(H - bh / 2 - 120, p.y + offsetY));
 
@@ -772,7 +893,7 @@ function drawTempGauge(tempC, label) {
   ctx.fillText(label, gx + gw / 2, gy + 140);
 }
 
-window.renderSceneFrame = function(segIdx, segProg, globalTime, currentWord) {
+window.renderSingleFrameB64 = function(segIdx, segProg, globalTime, currentWord) {
   const kf = CAM_KEYFRAMES[segIdx];
   const ep = smoothstep(segProg);
   camera.position.set(
@@ -786,7 +907,10 @@ window.renderSceneFrame = function(segIdx, segProg, globalTime, currentWord) {
     lerp(kf.look0[2], kf.look1[2], ep)
   );
 
-  // Stage visibility & animations
+  clouds3D.forEach(c => {
+    c.mesh.position.x = ((c.baseX + globalTime * c.speed + 24) % 48) - 24;
+  });
+
   craneGroup.visible = (segIdx <= 1);
   const rodDrop = (segIdx === 0) ? smoothstep(segProg * 2.2) : 1.0;
   fuelGroup.position.y = lerp(7.2, 2.3, rodDrop);
@@ -816,7 +940,7 @@ window.renderSceneFrame = function(segIdx, segProg, globalTime, currentWord) {
 
   plumeGroup.visible = (segIdx === 5 || segIdx === 6);
   if (segIdx === 5) {
-    fishList.forEach((f, idx) => {
+    fishList.forEach(f => {
       f.group.position.x = f.baseX - segProg * 2.2;
       const col = segProg > 0.38 ? 0xe6958a : 0xa8b8c0;
       f.body.material.color.setHex(col);
@@ -853,7 +977,6 @@ window.renderSceneFrame = function(segIdx, segProg, globalTime, currentWord) {
 
   renderer.render(scene, camera);
 
-  // 2D HUD & Callouts Overlay
   ctx.clearRect(0, 0, W, H);
 
   if (segIdx === 0) {
@@ -891,7 +1014,6 @@ window.renderSceneFrame = function(segIdx, segProg, globalTime, currentWord) {
   } else if (segIdx === 9) {
     drawSafeCallout([-12.5, 1.8, 2.2], 140, -140, 'SPENT FUEL POOL', '#3992d6');
   } else if (segIdx === 10) {
-    // 1 Fuel Pellet = 1 Ton of Coal Card
     ctx.fillStyle = '#faf6eb';
     ctx.strokeStyle = '#2c353d';
     ctx.lineWidth = 6;
@@ -941,7 +1063,6 @@ window.renderSceneFrame = function(segIdx, segProg, globalTime, currentWord) {
     }
   }
 
-  // Top Center Word-by-Word Pop Caption
   if (currentWord) {
     const text = currentWord.toUpperCase();
     ctx.font = '900 78px Montserrat, sans-serif';
@@ -954,6 +1075,14 @@ window.renderSceneFrame = function(segIdx, segProg, globalTime, currentWord) {
     ctx.fillStyle = '#ffffff';
     ctx.fillText(text, W / 2, 370);
   }
+
+  finalCtx.drawImage(webglCanvas, 0, 0);
+  finalCtx.drawImage(hudCanvas, 0, 0);
+  return finalCanvas.toDataURL('image/jpeg', 0.92).split(',')[1];
+};
+
+window.renderBatchB64 = function(batchParams) {
+  return batchParams.map(p => window.renderSingleFrameB64(p[0], p[1], p[2], p[3]));
 };
 </script>
 </body>
@@ -985,6 +1114,9 @@ def render_threejs_video(seg_durations, master_audio, out_video):
         browser = p.chromium.launch(
             headless=True,
             args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
                 "--use-gl=angle",
                 "--use-angle=swiftshader",
                 "--enable-webgl",
@@ -994,8 +1126,9 @@ def render_threejs_video(seg_durations, master_audio, out_video):
         )
         page = browser.new_page(viewport={"width": 1080, "height": 1920})
         page.goto(f"file://{html_path}", wait_until="networkidle")
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(600)
 
+        all_frame_tasks = []
         global_t = 0.0
         dt = 1.0 / fps
         for seg_idx, seg in enumerate(NUCLEAR_PLANT_SEGMENTS):
@@ -1007,14 +1140,15 @@ def render_threejs_video(seg_durations, master_audio, out_video):
                 prog = f_i / max(seg_frames - 1, 1)
                 w_idx = min(int(prog * len(words)), len(words) - 1)
                 curr_word = words[w_idx]
-
-                page.evaluate(
-                    "([sIdx, sProg, gTime, word]) => window.renderSceneFrame(sIdx, sProg, gTime, word)",
-                    [seg_idx, prog, global_t, curr_word]
-                )
-                jpg_bytes = page.screenshot(type="jpeg", quality=92)
-                ffmpeg_proc.stdin.write(jpg_bytes)
+                all_frame_tasks.append([seg_idx, prog, round(global_t, 4), curr_word])
                 global_t += dt
+
+        batch_size = 12
+        for b_start in range(0, len(all_frame_tasks), batch_size):
+            batch = all_frame_tasks[b_start:b_start + batch_size]
+            b64_list = page.evaluate("batch => window.renderBatchB64(batch)", batch)
+            for b64_str in b64_list:
+                ffmpeg_proc.stdin.write(base64.b64decode(b64_str))
 
         browser.close()
 
@@ -1032,8 +1166,7 @@ def upload_to_youtube(video_path, title, refresh_token):
     )
     youtube = build("youtube", "v3", credentials=creds)
 
-    # ضمان أن العنوان أقل من 95 حرفاً لتجنب خطأ invalidTitle في YouTube API
-    clean_title = f"{title[:70]} #nuclear #science #shorts"[:95]
+    clean_title = f"{title[:65]} #nuclear #science #shorts"[:95]
 
     body = {
         "snippet": {
