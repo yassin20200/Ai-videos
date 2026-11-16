@@ -1,21 +1,16 @@
 import os
 import re
-import math
 import json
 import time
 import base64
-import random
 import shutil
-import urllib.parse
 import subprocess
 from pathlib import Path
 import requests
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from PIL import Image, ImageDraw, ImageFont
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 ENGLISH_VOICE = os.getenv("ENGLISH_VOICE", "en-US-AndrewMultilingualNeural").strip() or "en-US-AndrewMultilingualNeural"
 
 YT_CLIENT_ID = os.getenv("YT_CLIENT_ID", "").strip()
@@ -26,211 +21,127 @@ FB_PAGE_IDS = [p.strip() for p in os.getenv("FB_PAGE_IDS", "").split(",") if p.s
 META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "").strip()
 
 GRAPH_API = "https://graph.facebook.com/v21.0"
-FONT_BOLD_PATH = "Montserrat-ExtraBold.ttf"
 
 SFX_LIBRARY = {
-    "splash": ("https://actions.google.com/sounds/v1/water/water_splashing.ogg", 0.30),
-    "turbine": ("https://actions.google.com/sounds/v1/science_fiction/sci_fi_osh.ogg", 0.25),
-    "alarm": ("https://actions.google.com/sounds/v1/alarms/beep_short.ogg", 0.30),
-    "clunk": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.35),
-    "whoosh": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.28),
-    "bubbles": ("https://actions.google.com/sounds/v1/water/air_woosh_underwater.ogg", 0.28),
-    "pop": ("https://actions.google.com/sounds/v1/cartoon/pop.ogg", 0.30),
-    "cheer": ("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg", 0.30)
+    "splash": ("https://actions.google.com/sounds/v1/water/water_splashing.ogg", 0.28),
+    "turbine": ("https://actions.google.com/sounds/v1/science_fiction/sci_fi_osh.ogg", 0.24),
+    "alarm": ("https://actions.google.com/sounds/v1/alarms/beep_short.ogg", 0.28),
+    "clunk": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.32),
+    "whoosh": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.26),
+    "bubbles": ("https://actions.google.com/sounds/v1/water/air_woosh_underwater.ogg", 0.26),
+    "pop": ("https://actions.google.com/sounds/v1/cartoon/pop.ogg", 0.28),
+    "cheer": ("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg", 0.28)
 }
 
-
-def ensure_english_font():
-    if os.path.exists(FONT_BOLD_PATH) and os.path.getsize(FONT_BOLD_PATH) > 10000:
-        return FONT_BOLD_PATH
-    try:
-        url = "https://github.com/google/fonts/raw/main/ofl/montserrat/static/Montserrat-ExtraBold.ttf"
-        r = requests.get(url, timeout=30)
-        if r.ok:
-            with open(FONT_BOLD_PATH, "wb") as f:
-                f.write(r.content)
-            return FONT_BOLD_PATH
-    except Exception:
-        pass
-    return "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-
-
+# الـ 12 مرحلة الكاملة لبناء المحطة النووية بنفس إيقاع وكاميرا الفيديو المرجعي ثلاثي الأبعاد
 NUCLEAR_PLANT_SEGMENTS = [
     {
         "id": 0,
         "sfx": "splash",
-        "cam_start": (500, 980, 1.35),
-        "cam_end": (500, 1020, 1.65),
-        "narration": "If you drop uranium into a tank of water, the uranium gets hot, and just like that, you have a nuclear reactor."
+        "narration": "If you drop uranium into a tank of water, the uranium gets hot, and you have a nuclear reactor."
     },
     {
         "id": 1,
         "sfx": "turbine",
-        "cam_start": (500, 1020, 1.65),
-        "cam_end": (630, 1040, 1.25),
-        "narration": "But hot water alone doesn't make electricity. So you seal the tank, let it boil, and use the steam to spin a turbine connected to a power generator."
+        "narration": "But hot water doesn't make electricity. So you let it boil, and use steam to spin a turbine connected to a generator."
     },
     {
         "id": 2,
         "sfx": "alarm",
-        "cam_start": (630, 1040, 1.25),
-        "cam_end": (480, 1030, 1.75),
-        "narration": "The problem is, uranium keeps getting hotter and hotter. So you slide control rods between the fuel to absorb the reaction and cool it down."
+        "narration": "However, uranium keeps getting hotter and hotter. So you slide control rods between the fuel to absorb the reaction and cool it down."
     },
     {
         "id": 3,
         "sfx": "clunk",
-        "cam_start": (480, 1030, 1.75),
-        "cam_end": (480, 1000, 1.55),
-        "narration": "In an emergency, you need to stop it instantly. So you hang the rods above the core on electromagnets. If the power cuts out, gravity drops them right in."
+        "narration": "In an emergency, you need to stop it fast. So you hang the rods above the core on electromagnets. If power cuts out, they drop right in."
     },
     {
         "id": 4,
         "sfx": "bubbles",
-        "cam_start": (480, 1000, 1.55),
-        "cam_end": (580, 1020, 1.30),
-        "narration": "However, the water touching the uranium becomes radioactive, and right now it's spinning your turbine. So you seal it inside its own closed loop, and use its heat to boil clean water in a second loop."
+        "narration": "But water touching uranium gets radioactive, and right now it spins your turbine. So you seal it in a closed loop to boil clean water in a second loop."
     },
     {
         "id": 5,
         "sfx": "splash",
-        "cam_start": (580, 1020, 1.30),
-        "cam_end": (780, 920, 1.40),
-        "narration": "Next, you need to condense the steam back into water to reuse it. You can cool it with water from a river, but the river heats up so much it could literally cook the fish."
+        "narration": "Next, you condense the steam back into water to reuse it. You can cool it with river water, but the river heats up enough to cook the fish."
     },
     {
         "id": 6,
         "sfx": "whoosh",
-        "cam_start": (780, 920, 1.40),
-        "cam_end": (980, 920, 1.35),
-        "narration": "So instead, you build a giant cooling tower. Hot water rains down inside, rising air carries the heat away, and that white cloud on top is just pure water vapor."
+        "narration": "So you build a giant cooling tower. Hot water rains down inside, air carries heat up, and that cloud on top is just pure water vapor."
     },
     {
         "id": 7,
         "sfx": "clunk",
-        "cam_start": (980, 920, 1.35),
-        "cam_end": (560, 1000, 1.25),
-        "narration": "Still, if anything leaks, radiation could escape. So you surround the reactor with a massive steel and concrete containment dome over a meter thick."
+        "narration": "If anything leaks, radiation could escape. So you build a steel and concrete containment dome over a meter thick around the reactor."
     },
     {
         "id": 8,
         "sfx": "alarm",
-        "cam_start": (560, 1000, 1.25),
-        "cam_end": (420, 1020, 1.20),
-        "narration": "But if the water pumps fail, the core will still overheat. So you add backup diesel generators, and an elevated water tank that floods the core using gravity alone."
+        "narration": "If the pumps fail, the core will overheat. So you add backup generators, and a high water tank that floods the core by gravity alone."
     },
     {
         "id": 9,
         "sfx": "bubbles",
-        "cam_start": (420, 1020, 1.20),
-        "cam_end": (210, 1080, 1.65),
-        "narration": "Even used nuclear fuel stays hot for years, so you submerge it in a deep water pool where it glows bright blue."
+        "narration": "Used nuclear fuel stays hot for years, so you submerge it in a deep water pool where it glows bright blue."
     },
     {
         "id": 10,
         "sfx": "pop",
-        "cam_start": (210, 1080, 1.65),
-        "cam_end": (210, 1120, 1.55),
-        "narration": "Just one tiny uranium fuel pellet, the size of a gummy bear, produces as much electricity as an entire ton of coal."
+        "narration": "One tiny uranium fuel pellet, the size of a gummy bear, produces as much electricity as an entire ton of coal."
     },
     {
         "id": 11,
         "sfx": "cheer",
-        "cam_start": (210, 1120, 1.55),
-        "cam_end": (600, 980, 0.92),
-        "narration": "And congratulations! You just built a complete nuclear power plant."
+        "narration": "And congratulations! You just built a nuclear power plant."
     }
 ]
 
 
-def generate_gemini_english_human_tts(narration_text, dst_wav):
-    if not GEMINI_API_KEY:
-        return False
-
-    tts_models = ["gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts"]
-    director_prompt = (
-        "Speak as an engaging, clear, upbeat American science explainer YouTuber (like Zack D. Films or Kurzgesagt), "
-        "with natural human rhythm and enthusiasm:\n"
-        f"{narration_text}"
-    )
-
-    for model_name in tts_models:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
-            payload = {
-                "contents": [{"parts": [{"text": director_prompt}]}],
-                "generationConfig": {
-                    "responseModalities": ["AUDIO"],
-                    "speechConfig": {
-                        "voiceConfig": {
-                            "prebuiltVoiceConfig": {
-                                "voiceName": "Puck"
-                            }
-                        }
-                    }
-                }
-            }
-            r = requests.post(url, json=payload, timeout=45)
-            if r.status_code == 200:
-                rj = r.json()
-                for cand in rj.get("candidates", []):
-                    for part in cand.get("content", {}).get("parts", []):
-                        inline = part.get("inlineData") or part.get("inline_data")
-                        if inline and inline.get("data"):
-                            pcm_bytes = base64.b64decode(inline["data"])
-                            if len(pcm_bytes) > 4000:
-                                raw_pcm = "temp_gemini_voice.pcm"
-                                with open(raw_pcm, "wb") as f:
-                                    f.write(pcm_bytes)
-                                subprocess.run([
-                                    "ffmpeg", "-y", "-loglevel", "error",
-                                    "-f", "s16le", "-ar", "24000", "-ac", "1",
-                                    "-i", raw_pcm,
-                                    "-ar", "44100", "-ac", "2", dst_wav
-                                ], check=True)
-                                return True
-        except Exception:
-            pass
-    return False
+def ensure_playwright_chromium():
+    try:
+        import playwright  # noqa: F401
+    except ImportError:
+        print("📦 Installing Playwright for 3D WebGL Rendering...", flush=True)
+        subprocess.run(["pip", "install", "-q", "playwright"], check=True)
+        subprocess.run(["playwright", "install", "chromium"], check=True)
 
 
 def build_segment_audio(seg_idx, segment, out_wav):
+    """
+    استخدام معلق صوتي أمريكي واحد ثابت وموحد 100% (en-US-AndrewMultilingualNeural)
+    في جميع المراحل الـ 12 لضمان عدم تغير صوت المتحدث في منتصف الفيديو أبداً!
+    """
     text = segment["narration"]
     sfx_key = segment["sfx"]
 
-    raw_voice = f"seg_raw_{seg_idx}.wav"
+    raw_mp3 = f"seg_raw_{seg_idx}.mp3"
     trimmed_voice = f"seg_trim_{seg_idx}.wav"
     sfx_ogg = f"seg_sfx_{seg_idx}.ogg"
 
-    voice_ok = generate_gemini_english_human_tts(text, raw_voice)
-    if not voice_ok:
-        raw_mp3 = f"seg_raw_{seg_idx}.mp3"
-        for v_name in [ENGLISH_VOICE, "en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural", "en-US-ChristopherNeural"]:
-            try:
-                subprocess.run([
-                    "edge-tts", "--voice", v_name, "--rate=+6%",
-                    "--text", text, "--write-media", raw_mp3
-                ], check=True, timeout=30, stderr=subprocess.DEVNULL)
-                if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
-                    shutil.copyfile(raw_mp3, raw_voice)
-                    voice_ok = True
-                    break
-            except Exception:
-                time.sleep(1)
+    voice_ok = False
+    for attempt in range(3):
+        try:
+            subprocess.run([
+                "edge-tts", "--voice", ENGLISH_VOICE, "--rate=+12%", "--pitch=+0Hz",
+                "--text", text, "--write-media", raw_mp3
+            ], check=True, timeout=30, stderr=subprocess.DEVNULL)
+            if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
+                voice_ok = True
+                break
+        except Exception:
+            time.sleep(1)
 
     if not voice_ok:
-        encoded = urllib.parse.quote(text)
-        r = requests.get(f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q={encoded}", timeout=30)
-        with open(raw_voice, "wb") as f:
-            f.write(r.content)
+        raise RuntimeError(f"Failed to generate consistent voice for stage {seg_idx}")
 
-    warm_eq = "highpass=f=80,equalizer=f=190:width_type=o:width=1.5:g=2.5,equalizer=f=3800:width_type=o:width=2.0:g=2.0"
+    warm_eq = "highpass=f=80,equalizer=f=185:width_type=o:width=1.5:g=2.6,equalizer=f=3800:width_type=o:width=2.0:g=2.0"
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
-        "-i", raw_voice,
+        "-i", raw_mp3,
         "-af", (
-            f"silenceremove=start_periods=1:start_silence=0.03:start_threshold=-42dB,"
-            f"areverse,silenceremove=start_periods=1:start_silence=0.05:start_threshold=-42dB,areverse,"
+            f"silenceremove=start_periods=1:start_silence=0.02:start_threshold=-42dB,"
+            f"areverse,silenceremove=start_periods=1:start_silence=0.04:start_threshold=-42dB,areverse,"
             f"{warm_eq}"
         ),
         "-ar", "44100", "-ac", "2", trimmed_voice
@@ -240,8 +151,8 @@ def build_segment_audio(seg_idx, segment, out_wav):
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", trimmed_voice
     ], capture_output=True, text=True, check=True)
-    v_dur = float(probe.stdout.strip() or "5.0")
-    final_dur = round(v_dur + 0.18, 2)
+    v_dur = float(probe.stdout.strip() or "4.5")
+    final_dur = round(v_dur + 0.12, 2)
 
     sfx_url, sfx_vol = SFX_LIBRARY.get(sfx_key, SFX_LIBRARY["pop"])
     try:
@@ -255,8 +166,8 @@ def build_segment_audio(seg_idx, segment, out_wav):
                 "-i", sfx_ogg,
                 "-i", trimmed_voice,
                 "-filter_complex",
-                f"[1:a]atrim=0:{min(final_dur, 2.0)},afade=t=in:d=0.05,afade=t=out:st={max(min(final_dur, 2.0) - 0.35, 0.1)}:d=0.35,volume={sfx_vol}[s];"
-                f"[2:a]adelay=40|40,volume=1.35[v];"
+                f"[1:a]atrim=0:{min(final_dur, 1.8)},afade=t=in:d=0.04,afade=t=out:st={max(min(final_dur, 1.8) - 0.3, 0.1)}:d=0.3,volume={sfx_vol}[s];"
+                f"[2:a]adelay=30|30,volume=1.35[v];"
                 f"[0:a][s][v]amix=inputs=3:duration=first:dropout_transition=0[a]",
                 "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
             ], check=True)
@@ -269,421 +180,846 @@ def build_segment_audio(seg_idx, segment, out_wav):
         "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={final_dur}",
         "-i", trimmed_voice,
         "-filter_complex",
-        "[1:a]adelay=40|40,volume=1.35[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
+        "[1:a]adelay=30|30,volume=1.35[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
         "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
     ], check=True)
     return final_dur
 
 
-def smoothstep(x):
-    x = max(0.0, min(1.0, x))
-    return x * x * (3.0 - 2.0 * x)
+# مشهد Three.js 3D WebGL الكامل مطابق للفيديو المرجعي فريم بفريم!
+THREEJS_HTML_TEMPLATE = r"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@800;900&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { width: 1080px; height: 1920px; overflow: hidden; background: #6eb1e8; font-family: 'Montserrat', sans-serif; }
+  #webgl-canvas { position: absolute; top: 0; left: 0; width: 1080px; height: 1920px; z-index: 1; }
+  #hud-canvas { position: absolute; top: 0; left: 0; width: 1080px; height: 1920px; z-index: 2; pointer-events: none; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+<canvas id="webgl-canvas" width="1080" height="1920"></canvas>
+<canvas id="hud-canvas" width="1080" height="1920"></canvas>
+<script>
+const W = 1080, H = 1920;
+const webglCanvas = document.getElementById('webgl-canvas');
+const hudCanvas = document.getElementById('hud-canvas');
+const ctx = hudCanvas.getContext('2d');
+
+const renderer = new THREE.WebGLRenderer({ canvas: webglCanvas, antialias: true, preserveDrawingBuffer: true, alpha: true });
+renderer.setSize(W, H);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, W / H, 0.5, 400);
+
+// 3D Lighting
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0x688850, 0.78);
+hemiLight.position.set(0, 50, 0);
+scene.add(hemiLight);
+
+const dirLight = new THREE.DirectionalLight(0xfff8e8, 0.82);
+dirLight.position.set(22, 42, 28);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.height = 2048;
+scene.add(dirLight);
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.45, metalness: 0.1 }, opts));
+}
+
+// 1. Ground, Tiled Pad, Road & River
+const grass = new THREE.Mesh(new THREE.BoxGeometry(160, 2, 160), mat(0x5fb43c, { roughness: 0.8 }));
+grass.position.set(0, -1, 0);
+grass.receiveShadow = true;
+scene.add(grass);
+
+// River in background
+const river = new THREE.Mesh(new THREE.BoxGeometry(160, 1.6, 12), mat(0x529ec2, { roughness: 0.3 }));
+river.position.set(0, -0.5, -18);
+scene.add(river);
+
+const riverBank1 = new THREE.Mesh(new THREE.BoxGeometry(160, 2.05, 1.2), mat(0x9b7a4a));
+riverBank1.position.set(0, -0.7, -11.8);
+scene.add(riverBank1);
+
+// Hot River Plume & 3D Fish (Stage 5)
+const plumeGroup = new THREE.Group();
+const plumeMesh = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, 0.2, 32), mat(0xd47254, { transparent: true, opacity: 0.75 }));
+plumeMesh.scale.set(1.8, 1, 0.65);
+plumeMesh.position.set(8, 0.35, -16.5);
+plumeGroup.add(plumeMesh);
+
+const fishList = [];
+for (let i = 0; i < 3; i++) {
+  const fg = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.55, 16, 12), mat(0xa8b8c0));
+  body.scale.set(1.8, 0.75, 0.4);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.7, 3), mat(0xa8b8c0));
+  tail.rotation.z = Math.PI / 2;
+  tail.position.set(1.0, 0, 0);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), mat(0x111111));
+  eye.position.set(-0.55, 0.1, 0.2);
+  fg.add(body, tail, eye);
+  fg.position.set(5.5 + i * 2.4, 0.55, -16.2 + (i % 2) * 0.9);
+  plumeGroup.add(fg);
+  fishList.push({ group: fg, body, tail, baseX: fg.position.x });
+}
+scene.add(plumeGroup);
+
+// 3D Sailboat on River
+const boatGroup = new THREE.Group();
+const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.5, 0.5, 4), mat(0x8a5229));
+hull.rotation.y = Math.PI / 4;
+hull.scale.set(1.8, 1, 0.8);
+const sail = new THREE.Mesh(new THREE.ConeGeometry(0.9, 2.5, 3), mat(0xffffff));
+sail.position.set(0, 1.4, 0);
+boatGroup.add(hull, sail);
+boatGroup.position.set(14, 0.5, -17);
+scene.add(boatGroup);
+
+// 3D Palm Trees & Background Buildings
+function createPalmTree(x, z) {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 3.6, 8), mat(0x8c6239));
+  trunk.position.y = 1.8;
+  g.add(trunk);
+  for (let i = 0; i < 6; i++) {
+    const leaf = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.08, 0.35), mat(0x3f9e33));
+    leaf.position.set(Math.cos(i * Math.PI / 3) * 0.7, 3.5, Math.sin(i * Math.PI / 3) * 0.7);
+    leaf.rotation.y = -i * Math.PI / 3;
+    leaf.rotation.z = -0.35;
+    g.add(leaf);
+  }
+  g.position.set(x, 0, z);
+  scene.add(g);
+}
+[-14, -10, -6, 6, 15].forEach(x => createPalmTree(x, -10.5));
+
+// Power Plant Office Building in Background
+const officeGroup = new THREE.Group();
+const officeBody = new THREE.Mesh(new THREE.BoxGeometry(7.5, 3.2, 3.2), mat(0xdfd0b2));
+officeBody.position.y = 1.6;
+officeGroup.add(officeBody);
+for (let i = -2; i <= 2; i++) {
+  const win = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.1, 0.1), mat(0x6b9bc3));
+  win.position.set(i * 1.3, 1.7, 1.61);
+  officeGroup.add(win);
+}
+officeGroup.position.set(-2.5, 0, -7.2);
+scene.add(officeGroup);
+
+// Tiled Concrete Pad with Grid
+const padCanvas = document.createElement('canvas');
+padCanvas.width = 512; padCanvas.height = 512;
+const pctx = padCanvas.getContext('2d');
+pctx.fillStyle = '#d8d2c5';
+pctx.fillRect(0, 0, 512, 512);
+pctx.strokeStyle = '#bcb5a6';
+pctx.lineWidth = 3;
+for (let i = 0; i <= 512; i += 32) {
+  pctx.beginPath(); pctx.moveTo(i, 0); pctx.lineTo(i, 512); pctx.stroke();
+  pctx.beginPath(); pctx.moveTo(0, i); pctx.lineTo(512, i); pctx.stroke();
+}
+const padTex = new THREE.CanvasTexture(padCanvas);
+padTex.wrapS = padTex.wrapT = THREE.RepeatWrapping;
+padTex.repeat.set(4, 2.5);
+const padMesh = new THREE.Mesh(new THREE.BoxGeometry(34, 0.3, 16), new THREE.MeshStandardMaterial({ map: padTex, roughness: 0.7 }));
+padMesh.position.set(3, 0.15, 0.5);
+padMesh.receiveShadow = true;
+scene.add(padMesh);
+
+// Asphalt Road with White Dashed Lines
+const roadGroup = new THREE.Group();
+const roadMesh = new THREE.Mesh(new THREE.BoxGeometry(60, 0.22, 4.4), mat(0x70757a, { roughness: 0.8 }));
+roadGroup.add(roadMesh);
+for (let i = -26; i <= 26; i += 4) {
+  const dash = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.25, 0.22), mat(0xf5f5f5));
+  dash.position.set(i, 0.02, 0);
+  roadGroup.add(dash);
+}
+roadGroup.position.set(2, 0.12, 9.2);
+roadGroup.rotation.y = -0.22;
+scene.add(roadGroup);
+
+// 2. Primary Reactor Tank (3D Cutaway Cylinder + Glass Front + Base)
+const reactorGroup = new THREE.Group();
+reactorGroup.position.set(-2.5, 0.3, 1.0);
+scene.add(reactorGroup);
+
+const rBase = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.5, 4.2), mat(0xd2cdc0));
+rBase.position.y = 0.25;
+reactorGroup.add(rBase);
+const rBaseTrim = new THREE.Mesh(new THREE.BoxGeometry(4.9, 0.14, 4.3), mat(0xeab826));
+rBaseTrim.position.y = 0.08;
+reactorGroup.add(rBaseTrim);
+
+// Back half-cylinder wall
+const rBackWall = new THREE.Mesh(
+  new THREE.CylinderGeometry(2.0, 2.0, 8.2, 32, 1, true, Math.PI * 0.55, Math.PI * 0.9),
+  mat(0xcfd6dc, { side: THREE.DoubleSide, metalness: 0.25, roughness: 0.35 })
+);
+rBackWall.position.y = 4.6;
+reactorGroup.add(rBackWall);
+
+// Side white frame pillars
+const pillarL = new THREE.Mesh(new THREE.BoxGeometry(0.32, 8.2, 0.4), mat(0xeef2f6));
+pillarL.position.set(-1.95, 4.6, 0.2);
+const pillarR = pillarL.clone();
+pillarR.position.set(1.95, 4.6, 0.2);
+const topCap = new THREE.Mesh(new THREE.CylinderGeometry(2.15, 2.15, 0.35, 32), mat(0xdce2e8));
+topCap.position.y = 8.75;
+reactorGroup.add(pillarL, pillarR, topCap);
+
+// 3D Water inside Primary Tank
+const waterMat1 = new THREE.MeshStandardMaterial({ color: 0x5ab9ea, transparent: true, opacity: 0.68, roughness: 0.15 });
+const waterMesh1 = new THREE.Mesh(new THREE.CylinderGeometry(1.88, 1.88, 6.8, 32), waterMat1);
+waterMesh1.position.y = 3.9;
+reactorGroup.add(waterMesh1);
+
+// 3D Yellow Gantry Crane
+const craneGroup = new THREE.Group();
+const cLegL = new THREE.Mesh(new THREE.BoxGeometry(0.35, 10.6, 0.35), mat(0xe8b428));
+cLegL.position.set(-2.55, 5.3, 0.5);
+const cLegR = cLegL.clone();
+cLegR.position.set(2.55, 5.3, 0.5);
+const cBeam = new THREE.Mesh(new THREE.BoxGeometry(5.6, 0.45, 0.5), mat(0xe8b428));
+cBeam.position.set(0, 10.5, 0.5);
+craneGroup.add(cLegL, cLegR, cBeam);
+reactorGroup.add(craneGroup);
+
+// 3D Uranium Fuel Bundle
+const fuelGroup = new THREE.Group();
+const fuelRods = [];
+for (let gx = -1.5; gx <= 1.5; gx += 1) {
+  for (let gz = -0.5; gz <= 0.5; gz += 1) {
+    const rod = new THREE.Mesh(new THREE.BoxGeometry(0.28, 3.2, 0.28), mat(0x885c42));
+    rod.position.set(gx * 0.55, 0, gz * 0.55);
+    fuelGroup.add(rod);
+    fuelRods.push(rod);
+  }
+}
+const plateTop = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.22, 1.4), mat(0x707880));
+plateTop.position.y = 1.65;
+const plateBot = plateTop.clone();
+plateBot.position.y = -1.65;
+fuelGroup.add(plateTop, plateBot);
+reactorGroup.add(fuelGroup);
+
+const coreGlowLight = new THREE.PointLight(0xff8c1a, 0, 9);
+coreGlowLight.position.set(0, 2.5, 1.2);
+reactorGroup.add(coreGlowLight);
+
+// 3D Control Rods & Red/Gold Electromagnets
+const ctrlGroup = new THREE.Group();
+const magGroup = new THREE.Group();
+for (let i = -1; i <= 1; i++) {
+  const cRod = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 3.2, 16), mat(0x454c54, { metalness: 0.5 }));
+  cRod.position.set(i * 0.65, 0, 0);
+  ctrlGroup.add(cRod);
+
+  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.55, 0.48), mat(0xd83428));
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.14, 0.50), mat(0xf6c834));
+  mag.add(stripe);
+  mag.position.set(i * 0.65, 7.8, 0);
+  magGroup.add(mag);
+}
+reactorGroup.add(ctrlGroup, magGroup);
+
+// 3D Front Control Box with 3 Green Buttons & Red Siren
+const ctrlBoxGroup = new THREE.Group();
+const cBox = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.7, 1.1), mat(0x80868c));
+cBox.position.y = 0.85;
+const panelFace = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 0.1), mat(0x3a4840));
+panelFace.position.set(0, 1.15, 0.52);
+ctrlBoxGroup.add(cBox, panelFace);
+for (let i = -1; i <= 1; i++) {
+  const btn = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 12), mat(0x3ed658));
+  btn.position.set(i * 0.28, 1.15, 0.58);
+  ctrlBoxGroup.add(btn);
+}
+const sirenMat = mat(0xd82222, { emissive: 0xaa0000, emissiveIntensity: 0.4 });
+const siren = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.35, 16), sirenMat);
+siren.position.set(0, 1.85, 0);
+ctrlBoxGroup.add(siren);
+ctrlBoxGroup.position.set(2.35, 0, 2.2);
+reactorGroup.add(ctrlBoxGroup);
+
+// 3D Bubbles inside Primary Tank
+const bubbles3D = [];
+const bubbleGeo = new THREE.SphereGeometry(0.14, 12, 12);
+const bubbleMat = mat(0xffffff, { transparent: true, opacity: 0.82 });
+for (let i = 0; i < 26; i++) {
+  const b = new THREE.Mesh(bubbleGeo, bubbleMat);
+  b.userData = {
+    x: (Math.random() - 0.5) * 2.4,
+    z: (Math.random() - 0.5) * 1.2,
+    seed: Math.random(),
+    speed: 0.45 + Math.random() * 0.35
+  };
+  reactorGroup.add(b);
+  bubbles3D.push(b);
+}
+
+// 3. Secondary Clean Water Tank & Heat Exchanger Coils (Stage 4+)
+const secTankGroup = new THREE.Group();
+secTankGroup.position.set(2.5, 0.3, 1.0);
+scene.add(secTankGroup);
+
+const sBackWall = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.55, 1.55, 8.2, 32, 1, true, Math.PI * 0.55, Math.PI * 0.9),
+  mat(0xcfd6dc, { side: THREE.DoubleSide })
+);
+sBackWall.position.y = 4.6;
+const sWater = new THREE.Mesh(new THREE.CylinderGeometry(1.45, 1.45, 6.2, 32), new THREE.MeshStandardMaterial({ color: 0x62beee, transparent: true, opacity: 0.68 }));
+sWater.position.y = 3.6;
+const sTopCap = new THREE.Mesh(new THREE.CylinderGeometry(1.65, 1.65, 0.32, 32), mat(0xdce2e8));
+sTopCap.position.y = 8.75;
+secTankGroup.add(sBackWall, sWater, sTopCap);
+
+// Heat Exchanger U-Tubes & Connecting Red/Blue Pipes
+const hotBridge = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 3.2, 16), mat(0xef6c35));
+hotBridge.rotation.z = Math.PI / 2;
+hotBridge.position.set(-2.3, 4.2, 0.4);
+const coldBridge = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 3.2, 16), mat(0x4ba3e3));
+coldBridge.rotation.z = Math.PI / 2;
+coldBridge.position.set(-2.3, 1.8, 0.4);
+const pumpBody = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.35, 20), mat(0x3a424a));
+pumpBody.rotation.x = Math.PI / 2;
+pumpBody.position.set(-2.3, 1.8, 0.55);
+secTankGroup.add(hotBridge, coldBridge, pumpBody);
+
+for (let r of [0.55, 0.95]) {
+  const uCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-r, 1.2, 0),
+    new THREE.Vector3(-r, 4.2, 0),
+    new THREE.Vector3(0, 4.9, 0),
+    new THREE.Vector3(r, 4.2, 0),
+    new THREE.Vector3(r, 1.2, 0)
+  ]);
+  const uTube = new THREE.Mesh(new THREE.TubeGeometry(uCurve, 32, 0.09, 12, false), mat(0xe67838));
+  secTankGroup.add(uTube);
+}
+
+// 4. 3D Steam Pipe, 3D Spinning Turbine, 3D Green Generator & Streetlamp
+const powerGroup = new THREE.Group();
+powerGroup.position.set(7.5, 0.3, 1.5);
+scene.add(powerGroup);
+
+// 3D Turbine Casing & Spinning Rotor Blades
+const turbBase = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.8, 2.2), mat(0xa8aeb5));
+turbBase.position.set(-1.2, 0.4, 0);
+const turbShell = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.15, 1.15, 3.0, 24, 1, false, 0, Math.PI),
+  mat(0xc8d0d8, { side: THREE.DoubleSide, metalness: 0.3 })
+);
+turbShell.rotation.z = Math.PI / 2;
+turbShell.rotation.x = -Math.PI / 2;
+turbShell.position.set(-1.2, 1.5, 0);
+powerGroup.add(turbBase, turbShell);
+
+const rotorGroup = new THREE.Group();
+rotorGroup.position.set(-1.2, 1.5, 0);
+const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 3.6, 16), mat(0x555c65, { metalness: 0.6 }));
+shaft.rotation.z = Math.PI / 2;
+rotorGroup.add(shaft);
+for (let ring = -1.1; ring <= 1.1; ring += 0.55) {
+  for (let b = 0; b < 8; b++) {
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.88, 0.32), mat(0xf4f7fa, { metalness: 0.2 }));
+    const ang = (b / 8) * Math.PI * 2 + ring * 0.4;
+    blade.position.set(ring, Math.cos(ang) * 0.52, Math.sin(ang) * 0.52);
+    blade.rotation.x = ang;
+    blade.rotation.y = 0.35;
+    rotorGroup.add(blade);
+  }
+}
+powerGroup.add(rotorGroup);
+
+// 3D Green Generator & Streetlamp
+const genMesh = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.8, 2.2), mat(0x46b48c));
+genMesh.position.set(2.0, 1.4, 0);
+powerGroup.add(genMesh);
+
+const lampGroup = new THREE.Group();
+lampGroup.position.set(4.5, 0, 1.4);
+const lampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 3.8, 12), mat(0x50555a));
+lampPole.position.y = 1.9;
+const lampBulb = new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 16), mat(0xfff275, { emissive: 0xffe040, emissiveIntensity: 0.8 }));
+lampBulb.position.y = 3.9;
+lampGroup.add(lampPole, lampBulb);
+powerGroup.add(lampGroup);
+
+// Steam Pipes (Primary -> Turbine for Stage 1..3, Secondary -> Turbine for Stage 4+)
+function makeSteamPipe(startX) {
+  const curve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(startX, 9.1, 1.0),
+    new THREE.Vector3(startX, 10.6, 1.0),
+    new THREE.Vector3(6.3, 10.6, 1.5),
+    new THREE.Vector3(6.3, 2.6, 1.5)
+  ]);
+  return new THREE.Mesh(new THREE.TubeGeometry(curve, 40, 0.34, 16, false), mat(0xd8dfe6));
+}
+const steamPipe1 = makeSteamPipe(-2.5);
+const steamPipe2 = makeSteamPipe(2.5);
+scene.add(steamPipe1, steamPipe2);
+
+// 5. Condenser & River Pipes & 3D Cooling Tower (Stage 5 & 6+)
+const condBox = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.8, 2.0), mat(0x8cbde0));
+condBox.position.set(6.3, 1.2, -1.8);
+const riverPipeBlue = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 11, 12), mat(0x4aa3e8));
+riverPipeBlue.rotation.x = Math.PI / 2;
+riverPipeBlue.position.set(6.0, 0.5, -7.5);
+const riverPipeRed = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 11, 12), mat(0xeb6434));
+riverPipeRed.rotation.x = Math.PI / 2;
+riverPipeRed.position.set(6.6, 0.5, -7.5);
+scene.add(condBox, riverPipeBlue, riverPipeRed);
+
+// 3D Hyperboloid Cooling Tower
+const towerGroup = new THREE.Group();
+towerGroup.position.set(13.2, 0.3, -2.5);
+const towerPts = [];
+for (let i = 0; i <= 20; i++) {
+  const t = i / 20;
+  const y = t * 9.5;
+  const r = 3.2 - 1.35 * Math.sin(t * Math.PI * 0.78);
+  towerPts.push(new THREE.Vector2(r, y));
+}
+const towerMat = mat(0xd8d2c4, { side: THREE.DoubleSide, transparent: true, opacity: 1.0 });
+const towerMesh = new THREE.Mesh(new THREE.LatheGeometry(towerPts, 32), towerMat);
+towerMesh.position.y = 0.8;
+const towerBasin = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 3.6, 0.8, 32), mat(0x7cb8de));
+towerBasin.position.y = 0.4;
+towerGroup.add(towerMesh, towerBasin);
+
+const steamPuffs = [];
+for (let i = 0; i < 6; i++) {
+  const puff = new THREE.Mesh(new THREE.SphereGeometry(1.2 + i * 0.25, 16, 16), mat(0xffffff, { transparent: true, opacity: 0.78 }));
+  puff.userData = { seed: i / 6 };
+  towerGroup.add(puff);
+  steamPuffs.push(puff);
+}
+scene.add(towerGroup);
+
+// 6. 3D Steel & Concrete Containment Dome (Stage 7+)
+const domeGroup = new THREE.Group();
+domeGroup.position.set(0.0, 0.3, 1.0);
+const domeCyl = new THREE.Mesh(
+  new THREE.CylinderGeometry(5.6, 5.6, 7.5, 32, 1, true, Math.PI * 0.5, Math.PI),
+  mat(0x90969c, { side: THREE.DoubleSide })
+);
+domeCyl.position.y = 3.75;
+const domeCap = new THREE.Mesh(
+  new THREE.SphereGeometry(5.6, 32, 20, Math.PI * 0.5, Math.PI, 0, Math.PI * 0.5),
+  mat(0x90969c, { side: THREE.DoubleSide })
+);
+domeCap.position.y = 7.5;
+// Thick front concrete arch wall
+const archPts = [];
+for (let a = 0; a <= 32; a++) {
+  const ang = (a / 32) * Math.PI;
+  archPts.push(new THREE.Vector3(Math.cos(ang) * 5.6, 7.5 + Math.sin(ang) * 5.6, 0));
+}
+const archCurve = new THREE.CatmullRomCurve3([
+  new THREE.Vector3(-5.6, 0, 0),
+  new THREE.Vector3(-5.6, 7.5, 0),
+  ...archPts.slice().reverse(),
+  new THREE.Vector3(5.6, 7.5, 0),
+  new THREE.Vector3(5.6, 0, 0)
+]);
+const archWall = new THREE.Mesh(new THREE.TubeGeometry(archCurve, 64, 0.58, 12, false), mat(0xcfd3d7));
+domeGroup.add(domeCyl, domeCap, archWall);
+scene.add(domeGroup);
+
+// 7. 3D Backup Diesel Generators & Elevated Gravity Water Tank (Stage 8+)
+const backupGroup = new THREE.Group();
+backupGroup.position.set(-8.2, 0.3, 1.0);
+const diesel1 = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.2, 1.8), mat(0xebc034));
+diesel1.position.set(0, 1.1, 0);
+const diesel2 = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.7, 1.6), mat(0xdfb228));
+diesel2.position.set(1.6, 0.85, 0);
+const gravTank = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 2.4, 24), mat(0x7cb8de));
+gravTank.position.set(0.8, 7.8, -0.5);
+for (let lx of [-0.3, 1.9]) {
+  for (let lz of [-1.4, 0.4]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 6.8, 8), mat(0x606870));
+    leg.position.set(lx, 3.4, lz);
+    backupGroup.add(leg);
+  }
+}
+const gravPipe = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 5.5, 12), mat(0x4ba3e3));
+gravPipe.rotation.z = Math.PI / 2;
+gravPipe.position.set(3.5, 7.2, 0);
+backupGroup.add(diesel1, diesel2, gravTank, gravPipe);
+scene.add(backupGroup);
+
+// 8. 3D Spent Fuel Pool & Blue Cherenkov Glow (Stage 9+)
+const poolGroup = new THREE.Group();
+poolGroup.position.set(-12.5, 0.3, 2.2);
+const poolWalls = new THREE.Mesh(new THREE.BoxGeometry(3.8, 2.6, 3.4), mat(0xe2e6ea));
+poolWalls.position.y = 1.3;
+const poolWater = new THREE.Mesh(new THREE.BoxGeometry(3.3, 2.2, 2.9), mat(0x4ab2f0, { transparent: true, opacity: 0.82, emissive: 0x0088ff, emissiveIntensity: 0.45 }));
+poolWater.position.y = 1.45;
+poolGroup.add(poolWalls, poolWater);
+scene.add(poolGroup);
+
+// Camera Keyframes (3D Perspective Positions & LookAt Targets for all 12 stages)
+const CAM_KEYFRAMES = [
+  { pos0: [-2.5, 8.5, 19.5], look0: [-2.5, 4.8, 0], pos1: [-2.5, 7.2, 16.0], look1: [-2.5, 4.5, 0] },
+  { pos0: [-2.5, 7.2, 16.0], look0: [-2.5, 4.5, 0], pos1: [3.2, 8.2, 22.5],  look1: [3.2, 4.2, 0] },
+  { pos0: [3.2, 8.2, 22.5],  look0: [3.2, 4.2, 0],  pos1: [-2.5, 6.8, 15.0], look1: [-2.5, 4.2, 0] },
+  { pos0: [-2.5, 6.8, 15.0], look0: [-2.5, 4.2, 0], pos1: [-2.5, 7.8, 16.5], look1: [-2.5, 5.2, 0] },
+  { pos0: [-2.5, 7.8, 16.5], look0: [-2.5, 5.2, 0], pos1: [0.2, 7.5, 19.5],  look1: [0.2, 4.5, 0] },
+  { pos0: [0.2, 7.5, 19.5],  look0: [0.2, 4.5, 0],  pos1: [6.8, 8.5, 18.5],  look1: [6.8, 2.5, -8] },
+  { pos0: [6.8, 8.5, 18.5],  look0: [6.8, 2.5, -8], pos1: [11.5, 8.2, 19.5], look1: [12.0, 5.5, -2] },
+  { pos0: [11.5, 8.2, 19.5], look0: [12.0, 5.5, -2], pos1: [1.5, 8.8, 25.5], look1: [1.5, 5.0, 0] },
+  { pos0: [1.5, 8.8, 25.5],  look0: [1.5, 5.0, 0],  pos1: [-3.2, 8.2, 23.5], look1: [-3.2, 4.5, 0] },
+  { pos0: [-3.2, 8.2, 23.5], look0: [-3.2, 4.5, 0], pos1: [-11.5, 7.5, 15.5], look1: [-12.2, 2.2, 2] },
+  { pos0: [-11.5, 7.5, 15.5], look0: [-12.2, 2.2, 2], pos1: [-11.5, 7.5, 16.5], look1: [-12.2, 1.5, 2] },
+  { pos0: [-11.5, 7.5, 16.5], look0: [-12.2, 1.5, 2], pos1: [1.0, 10.5, 34.0], look1: [1.0, 4.5, 0] }
+];
+
+function smoothstep(x) {
+  x = Math.max(0, Math.min(1, x));
+  return x * x * (3 - 2 * x);
+}
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function worldToScreen(x, y, z) {
+  const v = new THREE.Vector3(x, y, z);
+  v.project(camera);
+  return {
+    x: (v.x * 0.5 + 0.5) * W,
+    y: (-v.y * 0.5 + 0.5) * H
+  };
+}
+
+function drawSafeCallout(target3D, offsetX, offsetY, text, bgColor) {
+  const p = worldToScreen(target3D[0], target3D[1], target3D[2]);
+  ctx.font = '800 28px Montserrat, sans-serif';
+  const tw = ctx.measureText(text).width;
+  const padX = 24, padY = 18;
+  const bw = tw + padX * 2, bh = 54;
+
+  // منع خروج اللافتة خارج حدود الشاشة نهائياً!
+  const bx = Math.max(bw / 2 + 24, Math.min(W - bw / 2 - 24, p.x + offsetX));
+  const by = Math.max(bh / 2 + 120, Math.min(H - bh / 2 - 120, p.y + offsetY));
+
+  ctx.strokeStyle = '#222c35';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y);
+  ctx.lineTo(bx, by);
+  ctx.stroke();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = bgColor;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 3.5;
+  ctx.beginPath();
+  ctx.roundRect(bx - bw / 2, by - bh / 2, bw, bh, 26);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, bx, by + 1);
+}
+
+function drawTempGauge(tempC, label) {
+  const gx = 260, gy = 1490, gw = 560, gh = 195;
+  ctx.fillStyle = '#f8f5ec';
+  ctx.strokeStyle = '#2c353d';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.roundRect(gx, gy, gw, gh, 28);
+  ctx.fill();
+  ctx.stroke();
+
+  const bx = gx + 36, by = gy + 36, bw = 270, bh = 48;
+  ctx.fillStyle = '#e5e5e5';
+  ctx.lineWidth = 3.5;
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, bh, 24);
+  ctx.fill();
+  ctx.stroke();
+
+  const ratio = Math.max(0.08, Math.min(1.0, (tempC - 150) / 1050));
+  const isHot = tempC >= 700;
+  ctx.fillStyle = isHot ? '#e5392d' : '#2eb85c';
+  ctx.beginPath();
+  ctx.roundRect(bx + 4, by + 4, (bw - 8) * ratio, bh - 8, 20);
+  ctx.fill();
+
+  ctx.font = '900 50px Montserrat, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(Math.round(tempC) + '°C', bx + bw + 22, by + bh / 2 + 2);
+
+  ctx.fillStyle = '#2c353d';
+  ctx.font = '800 28px Montserrat, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, gx + gw / 2, gy + 140);
+}
+
+window.renderSceneFrame = function(segIdx, segProg, globalTime, currentWord) {
+  const kf = CAM_KEYFRAMES[segIdx];
+  const ep = smoothstep(segProg);
+  camera.position.set(
+    lerp(kf.pos0[0], kf.pos1[0], ep),
+    lerp(kf.pos0[1], kf.pos1[1], ep),
+    lerp(kf.pos0[2], kf.pos1[2], ep)
+  );
+  camera.lookAt(
+    lerp(kf.look0[0], kf.look1[0], ep),
+    lerp(kf.look0[1], kf.look1[1], ep),
+    lerp(kf.look0[2], kf.look1[2], ep)
+  );
+
+  // Stage visibility & animations
+  craneGroup.visible = (segIdx <= 1);
+  const rodDrop = (segIdx === 0) ? smoothstep(segProg * 2.2) : 1.0;
+  fuelGroup.position.y = lerp(7.2, 2.3, rodDrop);
+
+  const isHot = (segIdx === 0 && segProg > 0.45) || (segIdx >= 1 && segIdx <= 8);
+  coreGlowLight.intensity = isHot ? (segIdx === 2 || segIdx === 8 ? 2.6 : 1.5) : 0;
+  fuelRods.forEach(r => r.material.color.setHex(isHot ? 0xf29d38 : 0x885c42));
+
+  ctrlGroup.visible = (segIdx >= 2);
+  magGroup.visible = (segIdx >= 3);
+  if (segIdx === 2) {
+    ctrlGroup.position.y = lerp(6.8, 3.2, smoothstep((segProg - 0.35) * 1.8));
+  } else if (segIdx === 3) {
+    ctrlGroup.position.y = (segProg > 0.58) ? 2.5 : 5.4;
+  } else {
+    ctrlGroup.position.y = 4.2;
+  }
+
+  waterMat1.color.setHex(segIdx >= 4 ? 0x62c4b2 : 0x5ab9ea);
+  secTankGroup.visible = (segIdx >= 4);
+  powerGroup.visible = (segIdx >= 1);
+  steamPipe1.visible = (segIdx >= 1 && segIdx < 4);
+  steamPipe2.visible = (segIdx >= 4);
+
+  rotorGroup.rotation.x = globalTime * 14.0;
+  boatGroup.position.x = 16 - ((globalTime * 1.8) % 32);
+
+  plumeGroup.visible = (segIdx === 5 || segIdx === 6);
+  if (segIdx === 5) {
+    fishList.forEach((f, idx) => {
+      f.group.position.x = f.baseX - segProg * 2.2;
+      const col = segProg > 0.38 ? 0xe6958a : 0xa8b8c0;
+      f.body.material.color.setHex(col);
+      f.tail.material.color.setHex(col);
+    });
+  }
+
+  condBox.visible = riverPipeBlue.visible = riverPipeRed.visible = (segIdx >= 5);
+  towerGroup.visible = (segIdx >= 6);
+  towerMat.opacity = (segIdx === 6) ? 0.55 : 0.96;
+  steamPuffs.forEach(p => {
+    const pr = (p.userData.seed + globalTime * 0.35) % 1.0;
+    p.position.set(Math.sin(pr * 5) * 0.4, 9.8 + pr * 4.5, 0);
+    const sc = 0.7 + pr * 0.9;
+    p.scale.set(sc, sc, sc);
+  });
+
+  domeGroup.visible = (segIdx >= 7);
+  if (segIdx === 7) {
+    domeGroup.position.y = lerp(12.0, 0.3, smoothstep(segProg * 1.6));
+  } else {
+    domeGroup.position.y = 0.3;
+  }
+
+  backupGroup.visible = (segIdx >= 8);
+  poolGroup.visible = (segIdx >= 9);
+
+  const showBubbles = (segIdx === 0 && segProg > 0.45) || segIdx >= 1;
+  bubbles3D.forEach(b => {
+    b.visible = showBubbles;
+    const bp = (b.userData.seed + globalTime * b.userData.speed) % 1.0;
+    b.position.set(b.userData.x, lerp(1.5, 6.8, bp), b.userData.z);
+  });
+
+  renderer.render(scene, camera);
+
+  // 2D HUD & Callouts Overlay
+  ctx.clearRect(0, 0, W, H);
+
+  if (segIdx === 0) {
+    drawSafeCallout([-2.5, 2.5, 1.0], 230, -70, 'URANIUM FUEL', '#d9822b');
+    drawSafeCallout([-4.0, 2.0, 1.0], -190, 90, 'WATER TANK', '#5b9bd5');
+  } else if (segIdx === 1) {
+    drawSafeCallout([-2.5, 8.8, 1.0], -190, -40, 'STEAM', '#7f9eb2');
+    drawSafeCallout([6.3, 2.0, 1.5], -120, -130, 'TURBINE', '#7a8b99');
+    drawSafeCallout([9.5, 2.8, 1.5], 0, -140, 'GENERATOR', '#3ea680');
+  } else if (segIdx === 2) {
+    const tVal = segProg < 0.48 ? lerp(468, 1200, segProg / 0.48) : lerp(1200, 300, (segProg - 0.48) / 0.52);
+    drawTempGauge(tVal, 'CORE TEMPERATURE');
+    if (segProg > 0.42) {
+      drawSafeCallout([-2.0, 4.8, 1.0], 230, -40, 'CONTROL RODS', '#45505b');
+    }
+  } else if (segIdx === 3) {
+    drawSafeCallout([-2.0, 7.8, 1.0], 230, -30, 'ELECTROMAGNETS', '#d63629');
+  } else if (segIdx === 4) {
+    drawSafeCallout([0.0, 3.0, 1.4], 0, 190, 'CLOSED LOOP', '#d9822b');
+    drawSafeCallout([2.5, 4.5, 1.0], 200, -110, 'SECONDARY LOOP', '#4b9cd3');
+  } else if (segIdx === 5) {
+    drawSafeCallout([6.3, 1.8, -1.8], -160, -90, 'STEAM -> WATER', '#4b9cd3');
+    if (segProg > 0.42) {
+      drawTempGauge(70, 'RIVER WATER TEMP');
+    }
+  } else if (segIdx === 6) {
+    drawSafeCallout([13.2, 5.2, -2.5], -220, -30, 'COOLING TOWER', '#8a8478');
+    drawSafeCallout([13.2, 11.5, -2.5], -160, -40, 'PURE H2O VAPOR', '#4b9cd3');
+  } else if (segIdx === 7) {
+    drawSafeCallout([0.0, 11.5, 1.0], 0, -90, 'CONTAINMENT DOME (+1m)', '#6d747a');
+  } else if (segIdx === 8) {
+    drawTempGauge(lerp(745, 1064, Math.min(segProg * 1.5, 1.0)), 'CORE TEMPERATURE');
+    drawSafeCallout([-8.2, 1.8, 1.0], -120, -130, 'BACKUP GENERATORS', '#d4a024');
+    drawSafeCallout([-7.4, 8.2, 0.5], -80, -110, 'GRAVITY WATER TANK', '#4b9cd3');
+  } else if (segIdx === 9) {
+    drawSafeCallout([-12.5, 1.8, 2.2], 140, -140, 'SPENT FUEL POOL', '#3992d6');
+  } else if (segIdx === 10) {
+    // 1 Fuel Pellet = 1 Ton of Coal Card
+    ctx.fillStyle = '#faf6eb';
+    ctx.strokeStyle = '#2c353d';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.roundRect(120, 1140, 840, 480, 32);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#7c8690';
+    ctx.beginPath();
+    ctx.roundRect(235, 1300, 68, 92, 14);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#eb4236';
+    ctx.beginPath();
+    ctx.arc(375, 1320, 28, 0, Math.PI * 2);
+    ctx.roundRect(343, 1335, 64, 58, 18);
+    ctx.fill();
+
+    ctx.fillStyle = '#2c353d';
+    ctx.font = '800 32px Montserrat, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('1 FUEL PELLET', 315, 1455);
+
+    ctx.fillStyle = '#eba428';
+    ctx.font = '900 72px Montserrat, sans-serif';
+    ctx.fillText('=', 530, 1355);
+
+    ctx.fillStyle = '#383d42';
+    [[690, 1375], [750, 1375], [810, 1375], [720, 1325], [780, 1325], [750, 1275]].forEach(([cx, cy]) => {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 32, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    });
+    ctx.fillStyle = '#2c353d';
+    ctx.font = '800 32px Montserrat, sans-serif';
+    ctx.fillText('1 TON OF COAL', 750, 1455);
+  } else if (segIdx === 11) {
+    const colors = ['#ff5252', '#38b6ff', '#ffd628', '#4ce678', '#c864ff'];
+    for (let i = 0; i < 85; i++) {
+      const cx = (i * 137.5) % W + Math.sin(globalTime * 5 + i) * 20;
+      const cy = ((i * 93) + segProg * 1100) % H;
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.fillRect(cx, cy, 12, 20);
+    }
+  }
+
+  // Top Center Word-by-Word Pop Caption
+  if (currentWord) {
+    const text = currentWord.toUpperCase();
+    ctx.font = '900 78px Montserrat, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#222c35';
+    ctx.lineWidth = 14;
+    ctx.strokeText(text, W / 2, 370);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, W / 2, 370);
+  }
+};
+</script>
+</body>
+</html>
+"""
 
 
-def lerp(a, b, t):
-    return a + (b - a) * t
+def render_threejs_video(seg_durations, master_audio, out_video):
+    ensure_playwright_chromium()
+    from playwright.sync_api import sync_playwright
 
+    html_path = Path("scene_3d.html").resolve()
+    html_path.write_text(THREEJS_HTML_TEMPLATE, encoding="utf-8")
 
-class NuclearPlantRenderer:
-    def __init__(self, font_path):
-        self.font_word = ImageFont.truetype(font_path, 76)
-        self.font_label = ImageFont.truetype(font_path, 30)
-        self.font_gauge_num = ImageFont.truetype(font_path, 54)
-        self.font_gauge_sub = ImageFont.truetype(font_path, 28)
-        self.font_card = ImageFont.truetype(font_path, 34)
+    fps = 30
+    ffmpeg_proc = subprocess.Popen([
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-f", "image2pipe", "-vcodec", "mjpeg", "-r", str(fps),
+        "-i", "-",
+        "-i", master_audio,
+        "-map", "0:v", "-map", "1:a",
+        "-c:v", "libx264", "-preset", "fast", "-profile:v", "high", "-crf", "16",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "192k",
+        "-shortest", out_video
+    ], stdin=subprocess.PIPE)
 
-        random.seed(42)
-        self.bubbles = [(random.uniform(0.15, 0.85), random.uniform(0.0, 1.0), random.uniform(6, 13)) for _ in range(28)]
-        self.confetti = [
-            (
-                random.uniform(40, 1040),
-                random.uniform(-600, 1200),
-                random.uniform(4, 9),
-                random.choice([(255, 80, 80), (60, 180, 255), (255, 215, 40), (80, 230, 120), (200, 100, 255)])
-            )
-            for _ in range(95)
-        ]
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--use-gl=angle",
+                "--use-angle=swiftshader",
+                "--enable-webgl",
+                "--ignore-gpu-blocklist",
+                "--disable-gpu-sandbox"
+            ]
+        )
+        page = browser.new_page(viewport={"width": 1080, "height": 1920})
+        page.goto(f"file://{html_path}", wait_until="networkidle")
+        page.wait_for_timeout(500)
 
-    def world_to_screen(self, wx, wy, cam_x, cam_y, zoom):
-        sx = (wx - cam_x) * zoom + 540.0
-        sy = (wy - cam_y) * zoom + 960.0
-        return sx, sy
+        global_t = 0.0
+        dt = 1.0 / fps
+        for seg_idx, seg in enumerate(NUCLEAR_PLANT_SEGMENTS):
+            seg_dur = seg_durations[seg_idx]
+            seg_frames = max(int(round(seg_dur * fps)), 1)
+            words = re.sub(r'[,.?!—-]', '', seg["narration"]).split() or [""]
 
-    def draw_callout(self, draw, target_wx, target_wy, box_wx, box_wy, text, bg_color, cam_x, cam_y, zoom, alpha=1.0):
-        if alpha <= 0.05:
-            return
-        tx, ty = self.world_to_screen(target_wx, target_wy, cam_x, cam_y, zoom)
-        bx, by = self.world_to_screen(box_wx, box_wy, cam_x, cam_y, zoom)
+            for f_i in range(seg_frames):
+                prog = f_i / max(seg_frames - 1, 1)
+                w_idx = min(int(prog * len(words)), len(words) - 1)
+                curr_word = words[w_idx]
 
-        draw.line([(tx, ty), (bx, by)], fill=(35, 45, 55), width=max(int(3 * zoom), 2))
-        r_dot = max(int(6 * zoom), 4)
-        draw.ellipse([(tx - r_dot, ty - r_dot), (tx + r_dot, ty + r_dot)], fill=(255, 255, 255), outline=(35, 45, 55), width=2)
+                page.evaluate(
+                    "([sIdx, sProg, gTime, word]) => window.renderSceneFrame(sIdx, sProg, gTime, word)",
+                    [seg_idx, prog, global_t, curr_word]
+                )
+                jpg_bytes = page.screenshot(type="jpeg", quality=92)
+                ffmpeg_proc.stdin.write(jpg_bytes)
+                global_t += dt
 
-        bbox = draw.textbbox((0, 0), text, font=self.font_label)
-        tw = bbox[2] - bbox[0]
-        th = bbox[3] - bbox[1]
-        pad_x, pad_y = 22, 12
-        rect = [bx - tw // 2 - pad_x, by - th // 2 - pad_y, bx + tw // 2 + pad_x, by + th // 2 + pad_y]
-        draw.rounded_rectangle(rect, radius=22, fill=bg_color, outline=(255, 255, 255), width=3)
-        draw.text((bx - tw // 2, by - th // 2 - 2), text, font=self.font_label, fill=(255, 255, 255))
+        browser.close()
 
-    def draw_radiation_symbol(self, draw, sx, sy, radius):
-        r = max(int(radius), 6)
-        draw.ellipse([(sx - r, sy - r), (sx + r, sy + r)], fill=(250, 215, 40), outline=(30, 30, 30), width=2)
-        for angle in (0, 120, 240):
-            draw.pieslice([(sx - r + 2, sy - r + 2), (sx + r - 2, sy + r - 2)], start=angle, end=angle + 55, fill=(30, 30, 30))
-        r_in = max(r // 4, 2)
-        draw.ellipse([(sx - r_in, sy - r_in), (sx + r_in, sy + r_in)], fill=(250, 215, 40))
-
-    def draw_temp_gauge(self, draw, temp_c, label="CORE TEMP"):
-        card = [270, 1520, 810, 1710]
-        draw.rounded_rectangle(card, radius=28, fill=(248, 246, 240), outline=(45, 55, 65), width=5)
-
-        bar_bg = [310, 1555, 595, 1605]
-        draw.rounded_rectangle(bar_bg, radius=22, fill=(230, 230, 230), outline=(55, 65, 75), width=3)
-
-        ratio = max(0.08, min(1.0, (temp_c - 200.0) / 1000.0))
-        fill_w = int((595 - 310 - 8) * ratio)
-        bar_color = (230, 55, 45) if temp_c >= 700 else (45, 185, 85)
-        draw.rounded_rectangle([314, 1559, 314 + fill_w, 1601], radius=18, fill=bar_color)
-
-        t_str = f"{int(temp_c)}°C"
-        draw.text((620, 1548), t_str, font=self.font_gauge_num, fill=bar_color)
-
-        bbox = draw.textbbox((0, 0), label, font=self.font_gauge_sub)
-        lw = bbox[2] - bbox[0]
-        draw.text((540 - lw // 2, 1638), label, font=self.font_gauge_sub, fill=(45, 55, 65))
-
-    def render_frame(self, seg_idx, seg_progress, global_time, current_word):
-        img = Image.new("RGB", (1080, 1920), (115, 178, 235))
-        draw = ImageDraw.Draw(img, "RGBA")
-
-        seg = NUCLEAR_PLANT_SEGMENTS[seg_idx]
-        ease_p = smoothstep(seg_progress)
-        cam_x = lerp(seg["cam_start"][0], seg["cam_end"][0], ease_p)
-        cam_y = lerp(seg["cam_start"][1], seg["cam_end"][1], ease_p)
-        zoom = lerp(seg["cam_start"][2], seg["cam_end"][2], ease_p)
-
-        def w2s(wx, wy):
-            return self.world_to_screen(wx, wy, cam_x, cam_y, zoom)
-
-        # 1. Sky, Sun & Clouds
-        sun_x, sun_y = 870, 390
-        for r_glow, a_glow in [(150, 35), (115, 65), (85, 110)]:
-            draw.ellipse([(sun_x - r_glow, sun_y - r_glow), (sun_x + r_glow, sun_y + r_glow)], fill=(255, 235, 130, a_glow))
-        draw.ellipse([(sun_x - 62, sun_y - 62), (sun_x + 62, sun_y + 62)], fill=(255, 248, 195))
-
-        cloud_positions = [(180, 260, 1.0), (540, 330, 1.15), (820, 170, 0.9), (90, 480, 0.85)]
-        for cx0, cy0, cscale in cloud_positions:
-            cx = (cx0 + global_time * 8.0 * cscale) % 1280 - 100
-            cy = cy0
-            for dx, dy, rad in [(-55, 10, 48), (0, -12, 62), (55, 8, 50), (20, 18, 45)]:
-                r_c = int(rad * cscale)
-                draw.ellipse([(cx + dx * cscale - r_c, cy + dy * cscale - r_c), (cx + dx * cscale + r_c, cy + dy * cscale + r_c)], fill=(248, 250, 252))
-
-        # 2. Ground, River, Fish & Road
-        _, horizon_y = w2s(0, 680)
-        _, river_top = w2s(0, 740)
-        _, river_bot = w2s(0, 880)
-        draw.rectangle([0, int(horizon_y), 1080, 1920], fill=(102, 182, 72))
-        draw.rectangle([0, int(river_top), 1080, int(river_bot)], fill=(78, 165, 200))
-        draw.line([(0, int(river_top)), (1080, int(river_top))], fill=(195, 175, 135), width=max(int(6 * zoom), 3))
-        draw.line([(0, int(river_bot)), (1080, int(river_bot))], fill=(145, 115, 78), width=max(int(10 * zoom), 4))
-
-        if seg_idx in (5, 6):
-            rx1, ry1 = w2s(620, 775)
-            rx2, ry2 = w2s(960, 865)
-            plume_col = (225, 115, 75, 185) if seg_idx == 5 else (140, 175, 190, 110)
-            draw.ellipse([rx1, ry1, rx2, ry2], fill=plume_col)
-            if seg_idx == 5:
-                for fx_off, fy_off in [(700, 805), (780, 825), (860, 810)]:
-                    fx, fy = w2s(fx_off - seg_progress * 25, fy_off)
-                    fish_c = (230, 155, 145) if seg_progress > 0.35 else (170, 185, 195)
-                    fw, fh = int(34 * zoom), int(15 * zoom)
-                    draw.ellipse([fx - fw, fy - fh, fx + fw, fy + fh], fill=fish_c, outline=(50, 60, 70), width=2)
-                    draw.polygon([(fx + fw - 4, fy), (fx + fw + int(16 * zoom), fy - fh), (fx + fw + int(16 * zoom), fy + fh)], fill=fish_c, outline=(50, 60, 70))
-                    draw.ellipse([fx - fw // 2 - 3, fy - 4, fx - fw // 2 + 3, fy + 2], fill=(20, 20, 20))
-
-        boat_wx = 920 - (global_time * 12.0) % 700
-        bx, by = w2s(boat_wx, 815)
-        bw = int(28 * zoom)
-        draw.polygon([(bx - bw, by), (bx + bw, by), (bx + int(bw * 0.7), by + int(12 * zoom)), (bx - int(bw * 0.7), by + int(12 * zoom))], fill=(140, 90, 50))
-        draw.polygon([(bx, by - int(48 * zoom)), (bx, by - 2), (bx + int(24 * zoom), by - 2)], fill=(250, 250, 250), outline=(80, 80, 80))
-
-        pad_pts = [w2s(100, 920), w2s(1120, 920), w2s(1180, 1270), w2s(40, 1270)]
-        draw.polygon(pad_pts, fill=(216, 210, 197), outline=(165, 158, 145))
-
-        road_pts = [w2s(-50, 1210), w2s(1200, 1310), w2s(1200, 1420), w2s(-50, 1310)]
-        draw.polygon(road_pts, fill=(105, 110, 115), outline=(80, 85, 90))
-        for r_i in range(8):
-            lx1, ly1 = w2s(80 + r_i * 145, 1262 + r_i * 11)
-            lx2, ly2 = w2s(135 + r_i * 145, 1266 + r_i * 11)
-            draw.line([(lx1, ly1), (lx2, ly2)], fill=(245, 245, 245), width=max(int(5 * zoom), 3))
-
-        b_tl = w2s(270, 835)
-        b_br = w2s(450, 935)
-        draw.rectangle([b_tl[0], b_tl[1], b_br[0], b_br[1]], fill=(228, 212, 182), outline=(120, 110, 95), width=2)
-        sign_tl = w2s(295, 795)
-        sign_br = w2s(425, 825)
-        draw.rounded_rectangle([sign_tl[0], sign_tl[1], sign_br[0], sign_br[1]], radius=6, fill=(40, 45, 50), outline=(245, 205, 45), width=2)
-
-        # 3. Containment Dome
-        if seg_idx >= 7:
-            dome_drop = smoothstep(seg_progress * 1.6) if seg_idx == 7 else 1.0
-            dy_off = (1.0 - dome_drop) * -350
-            d_tl = w2s(365, 740 + dy_off)
-            d_br = w2s(695, 1155 + dy_off)
-            draw.pieslice([d_tl[0], d_tl[1], d_br[0], d_br[1] + int(180 * zoom)], start=180, end=360, fill=(145, 150, 155), outline=(80, 85, 90), width=4)
-            draw.rectangle([d_tl[0], (d_tl[1] + d_br[1]) // 2, d_br[0], d_br[1]], fill=(145, 150, 155), outline=(80, 85, 90), width=3)
-            draw.arc([d_tl[0] - int(18 * zoom), d_tl[1] - int(18 * zoom), d_br[0] + int(18 * zoom), d_br[1] + int(180 * zoom)], start=180, end=360, fill=(210, 212, 215), width=max(int(22 * zoom), 8))
-            draw.rectangle([d_tl[0] - int(20 * zoom), (d_tl[1] + d_br[1]) // 2, d_tl[0], d_br[1]], fill=(210, 212, 215), outline=(110, 115, 120), width=2)
-            draw.rectangle([d_br[0], (d_tl[1] + d_br[1]) // 2, d_br[0] + int(20 * zoom), d_br[1]], fill=(210, 212, 215), outline=(110, 115, 120), width=2)
-
-        # 4. Primary Reactor Tank + Uranium Rods + Control Rods
-        t1_tl = w2s(415, 865)
-        t1_br = w2s(535, 1140)
-        base_tl = w2s(400, 1140)
-        base_br = w2s(550, 1158)
-        draw.rectangle([base_tl[0], base_tl[1], base_br[0], base_br[1]], fill=(200, 195, 185), outline=(235, 185, 35), width=3)
-        draw.rectangle([t1_tl[0], t1_tl[1], t1_br[0], t1_br[1]], fill=(230, 238, 245), outline=(130, 145, 160), width=3)
-
-        water_col = (125, 198, 190, 210) if seg_idx >= 4 else (115, 195, 235, 210)
-        w1_tl = w2s(422, 910)
-        w1_br = w2s(528, 1135)
-        draw.rectangle([w1_tl[0], w1_tl[1], w1_br[0], w1_br[1]], fill=water_col)
-
-        if seg_idx <= 1:
-            c_tl = w2s(395, 780)
-            c_br = w2s(555, 1150)
-            draw.line([(c_tl[0], c_tl[1]), (c_tl[0], c_br[1])], fill=(235, 185, 40), width=max(int(10 * zoom), 4))
-            draw.line([(c_br[0], c_tl[1]), (c_br[0], c_br[1])], fill=(235, 185, 40), width=max(int(10 * zoom), 4))
-            draw.line([(c_tl[0], c_tl[1]), (c_br[0], c_tl[1])], fill=(235, 185, 40), width=max(int(12 * zoom), 5))
-
-        rod_drop = smoothstep(seg_progress * 2.2) if seg_idx == 0 else 1.0
-        rod_y_top = lerp(810, 995, rod_drop)
-        rod_y_bot = rod_y_top + 125
-
-        is_hot = (seg_idx == 0 and seg_progress > 0.45) or seg_idx in (1, 2, 3, 4, 5, 6, 7, 8)
-        heat_intensity = 1.0 if seg_idx in (2, 8) else 0.65
-        if is_hot:
-            gx, gy = w2s(475, (rod_y_top + rod_y_bot) / 2)
-            gr = int(75 * zoom * heat_intensity)
-            draw.ellipse([gx - gr, gy - gr, gx + gr, gy + gr], fill=(255, 165, 50, int(95 * heat_intensity)))
-
-        for r_i in range(5):
-            rx1, ry1 = w2s(434 + r_i * 18, rod_y_top)
-            rx2, ry2 = w2s(446 + r_i * 18, rod_y_bot)
-            r_col = (245, 175, 65) if is_hot else (135, 95, 70)
-            draw.rectangle([rx1, ry1, rx2, ry2], fill=r_col, outline=(90, 65, 45), width=1)
-
-        cap1_tl, cap1_br = w2s(430, rod_y_top - 8), w2s(520, rod_y_top)
-        cap2_tl, cap2_br = w2s(430, rod_y_bot), w2s(520, rod_y_bot + 8)
-        draw.rectangle([cap1_tl[0], cap1_tl[1], cap1_br[0], cap1_br[1]], fill=(120, 130, 140))
-        draw.rectangle([cap2_tl[0], cap2_tl[1], cap2_br[0], cap2_br[1]], fill=(120, 130, 140))
-
-        if seg_idx >= 2:
-            if seg_idx == 2:
-                ctrl_depth = smoothstep((seg_progress - 0.35) * 1.8)
-            elif seg_idx == 3:
-                ctrl_depth = 1.0 if seg_progress > 0.58 else 0.25
-            else:
-                ctrl_depth = 0.55
-
-            c_top = lerp(845, 935, ctrl_depth)
-            c_bot = c_top + 95
-            for c_i in range(3):
-                cx1, cy1 = w2s(444 + c_i * 26, c_top)
-                cx2, cy2 = w2s(454 + c_i * 26, c_bot)
-                draw.rectangle([cx1, cy1, cx2, cy2], fill=(70, 78, 85), outline=(40, 45, 50), width=1)
-
-                if seg_idx >= 3:
-                    mx1, my1 = w2s(440 + c_i * 26, 875)
-                    mx2, my2 = w2s(458 + c_i * 26, 898)
-                    draw.rectangle([mx1, my1, mx2, my2], fill=(215, 55, 45), outline=(250, 205, 50), width=2)
-
-        if (seg_idx == 0 and seg_progress > 0.5) or seg_idx >= 1:
-            for bx_norm, by_seed, b_rad in self.bubbles[:16]:
-                by_prog = (by_seed + global_time * 0.55) % 1.0
-                b_wx = lerp(432, 518, bx_norm)
-                b_wy = lerp(1020, 912, by_prog)
-                bsx, bsy = w2s(b_wx, b_wy)
-                br = max(int(b_rad * 0.45 * zoom), 3)
-                draw.ellipse([bsx - br, bsy - br, bsx + br, bsy + br], fill=(255, 255, 255, 195))
-
-        if seg_idx >= 4:
-            for rad_wx, rad_wy in [(445, 960), (485, 945), (505, 980), (460, 995)]:
-                rsx, rsy = w2s(rad_wx, rad_wy + math.sin(global_time * 3 + rad_wx) * 6)
-                self.draw_radiation_symbol(draw, rsx, rsy, 7 * zoom)
-
-        # 5. Secondary Clean Water Loop
-        if seg_idx >= 4:
-            t2_tl = w2s(575, 865)
-            t2_br = w2s(665, 1140)
-            draw.rectangle([t2_tl[0], t2_tl[1], t2_br[0], t2_br[1]], fill=(225, 235, 245), outline=(130, 145, 160), width=3)
-            w2_tl = w2s(582, 935)
-            w2_br = w2s(658, 1135)
-            draw.rectangle([w2_tl[0], w2_tl[1], w2_br[0], w2_br[1]], fill=(120, 198, 240, 210))
-
-            p_hot1, p_hot2 = w2s(528, 995), w2s(585, 1012)
-            p_cold1, p_cold2 = w2s(528, 1085), w2s(585, 1102)
-            draw.rounded_rectangle([p_hot1[0], p_hot1[1], p_hot2[0], p_hot2[1]], radius=8, fill=(240, 105, 55))
-            draw.rounded_rectangle([p_cold1[0], p_cold1[1], p_cold2[0], p_cold2[1]], radius=8, fill=(75, 165, 235))
-
-            coil_tl, coil_br = w2s(596, 975), w2s(644, 1120)
-            draw.arc([coil_tl[0], coil_tl[1], coil_br[0], coil_br[1]], start=180, end=360, fill=(235, 125, 65), width=max(int(5 * zoom), 3))
-            draw.line([(coil_tl[0], (coil_tl[1] + coil_br[1]) // 2), (coil_tl[0], coil_br[1])], fill=(235, 125, 65), width=max(int(5 * zoom), 3))
-            draw.line([(coil_br[0], (coil_tl[1] + coil_br[1]) // 2), (coil_br[0], coil_br[1])], fill=(235, 125, 65), width=max(int(5 * zoom), 3))
-
-            pmp_x, pmp_y = w2s(556, 1093)
-            pmp_r = int(14 * zoom)
-            draw.ellipse([pmp_x - pmp_r, pmp_y - pmp_r, pmp_x + pmp_r, pmp_y + pmp_r], fill=(55, 65, 75), outline=(255, 255, 255), width=2)
-            if seg_idx == 8:
-                draw.line([(pmp_x - pmp_r, pmp_y - pmp_r), (pmp_x + pmp_r, pmp_y + pmp_r)], fill=(235, 45, 45), width=4)
-                draw.line([(pmp_x + pmp_r, pmp_y - pmp_r), (pmp_x - pmp_r, pmp_y + pmp_r)], fill=(235, 45, 45), width=4)
-
-        # 6. Steam Pipe + Spinning Turbine + Generator + Lamp
-        if seg_idx >= 1:
-            pipe_src_x = 620 if seg_idx >= 4 else 475
-            ps1 = w2s(pipe_src_x, 865)
-            ps2 = w2s(pipe_src_x, 815)
-            ps3 = w2s(760, 815)
-            ps4 = w2s(760, 1040)
-            pw = max(int(16 * zoom), 6)
-            draw.line([ps1, ps2, ps3, ps4], fill=(210, 218, 225), width=pw, joint="curve")
-
-            tb_x, tb_y = w2s(765, 1065)
-            tb_w, tb_h = int(52 * zoom), int(28 * zoom)
-            draw.rectangle([tb_x - tb_w, tb_y - tb_h, tb_x + tb_w, tb_y + tb_h], fill=(165, 175, 185), outline=(90, 100, 110), width=2)
-            spin_phase = global_time * 12.0
-            for b_i in range(6):
-                bx_blade = tb_x - tb_w + int((b_i + 0.5) * (2 * tb_w / 6))
-                bh_blade = int(tb_h * (0.4 + 0.6 * abs(math.sin(spin_phase + b_i * 0.9))))
-                draw.polygon([
-                    (bx_blade - int(7 * zoom), tb_y - bh_blade),
-                    (bx_blade + int(7 * zoom), tb_y),
-                    (bx_blade - int(7 * zoom), tb_y + bh_blade)
-                ], fill=(245, 248, 252), outline=(120, 130, 140))
-
-            gen_tl = w2s(830, 1015)
-            gen_br = w2s(920, 1125)
-            draw.rectangle([gen_tl[0], gen_tl[1], gen_br[0], gen_br[1]], fill=(68, 178, 142), outline=(45, 125, 98), width=3)
-
-            lamp_base = w2s(965, 1140)
-            lamp_top = w2s(965, 1020)
-            draw.line([lamp_base, lamp_top], fill=(70, 75, 80), width=max(int(5 * zoom), 3))
-            lr = int(18 * zoom)
-            draw.ellipse([lamp_top[0] - lr * 2, lamp_top[1] - lr * 2, lamp_top[0] + lr * 2, lamp_top[1] + lr * 2], fill=(255, 240, 120, 95))
-            draw.ellipse([lamp_top[0] - lr, lamp_top[1] - lr, lamp_top[0] + lr, lamp_top[1] + lr], fill=(255, 245, 150), outline=(120, 110, 60), width=2)
-
-        # 7. Condenser & Cooling Tower
-        if seg_idx >= 5:
-            cond_tl = w2s(760, 945)
-            cond_br = w2s(835, 1005)
-            draw.rectangle([cond_tl[0], cond_tl[1], cond_br[0], cond_br[1]], fill=(145, 190, 220), outline=(95, 135, 165), width=2)
-
-        if seg_idx >= 6:
-            ct_top_l, ct_top_r = w2s(955, 730), w2s(1065, 730)
-            ct_mid_l, ct_mid_r = w2s(968, 845), w2s(1052, 845)
-            ct_bot_l, ct_bot_r = w2s(930, 1025), w2s(1090, 1025)
-
-            tower_alpha = 155 if seg_idx == 6 else 255
-            tower_col = (218, 212, 198, tower_alpha)
-            draw.polygon([ct_top_l, ct_top_r, ct_mid_r, ct_bot_r, ct_bot_l, ct_mid_l], fill=tower_col, outline=(140, 135, 125))
-
-            for s_i in range(5):
-                s_prog = (s_i * 0.2 + global_time * 0.35) % 1.0
-                sx_c, sy_c = w2s(1010 + math.sin(s_prog * 5) * 18, 720 - s_prog * 140)
-                sr = int((28 + s_prog * 38) * zoom)
-                draw.ellipse([sx_c - sr, sy_c - sr, sx_c + sr, sy_c + sr], fill=(255, 255, 255, int(210 * (1.0 - s_prog * 0.65))))
-
-        # 8. Backup Generators & Gravity Water Tank
-        if seg_idx >= 8:
-            gen2_tl, gen2_br = w2s(245, 1045), w2s(325, 1135)
-            draw.rectangle([gen2_tl[0], gen2_tl[1], gen2_br[0], gen2_br[1]], fill=(242, 198, 52), outline=(165, 130, 30), width=2)
-            wt_tl, wt_br = w2s(255, 815), w2s(345, 895)
-            leg1, leg2 = w2s(270, 1135), w2s(330, 1135)
-            draw.line([(wt_tl[0] + 10, wt_br[1]), leg1], fill=(95, 105, 115), width=max(int(5 * zoom), 3))
-            draw.line([(wt_br[0] - 10, wt_br[1]), leg2], fill=(95, 105, 115), width=max(int(5 * zoom), 3))
-            draw.rectangle([wt_tl[0], wt_tl[1], wt_br[0], wt_br[1]], fill=(135, 195, 230), outline=(85, 135, 165), width=3)
-
-        # 9. Spent Fuel Pool & Blue Cherenkov Glow
-        if seg_idx >= 9:
-            pool_tl, pool_br = w2s(125, 1045), w2s(235, 1155)
-            draw.rectangle([pool_tl[0], pool_tl[1], pool_br[0], pool_br[1]], fill=(225, 232, 238), outline=(130, 140, 150), width=3)
-            pw_tl, pw_br = w2s(133, 1060), w2s(227, 1145)
-            draw.rectangle([pw_tl[0], pw_tl[1], pw_br[0], pw_br[1]], fill=(85, 185, 245, 225))
-            cg_x, cg_y = w2s(180, 1105)
-            c_rad = int(42 * zoom)
-            draw.ellipse([cg_x - c_rad, cg_y - c_rad, cg_x + c_rad, cg_y + c_rad], fill=(120, 225, 255, 140))
-
-        # 10. Callout Labels & Gauges
-        if seg_idx == 0:
-            self.draw_callout(draw, 475, 1045, 675, 965, "URANIUM FUEL", (215, 135, 45), cam_x, cam_y, zoom)
-            self.draw_callout(draw, 425, 1090, 260, 1140, "WATER TANK", (105, 165, 205), cam_x, cam_y, zoom)
-        elif seg_idx == 1:
-            self.draw_callout(draw, 475, 835, 310, 825, "STEAM", (135, 155, 170), cam_x, cam_y, zoom)
-            self.draw_callout(draw, 765, 1055, 680, 945, "TURBINE", (120, 140, 155), cam_x, cam_y, zoom)
-            self.draw_callout(draw, 875, 1040, 875, 920, "GENERATOR", (68, 178, 142), cam_x, cam_y, zoom)
-        elif seg_idx == 2:
-            if seg_progress < 0.48:
-                temp_val = lerp(468, 1200, seg_progress / 0.48)
-            else:
-                temp_val = lerp(1200, 300, (seg_progress - 0.48) / 0.52)
-            self.draw_temp_gauge(draw, temp_val, "CORE TEMPERATURE")
-            if seg_progress > 0.45:
-                self.draw_callout(draw, 495, 965, 685, 945, "CONTROL RODS", (65, 75, 85), cam_x, cam_y, zoom)
-        elif seg_idx == 3:
-            self.draw_callout(draw, 475, 885, 680, 880, "ELECTROMAGNETS", (215, 55, 45), cam_x, cam_y, zoom)
-        elif seg_idx == 4:
-            self.draw_callout(draw, 555, 1045, 555, 1190, "CLOSED LOOP", (215, 135, 45), cam_x, cam_y, zoom)
-            self.draw_callout(draw, 620, 995, 780, 940, "SECONDARY LOOP", (85, 165, 220), cam_x, cam_y, zoom)
-        elif seg_idx == 5:
-            self.draw_callout(draw, 795, 965, 650, 895, "STEAM -> WATER", (85, 165, 220), cam_x, cam_y, zoom)
-            if seg_progress > 0.45:
-                self.draw_temp_gauge(draw, 70, "RIVER WATER TEMP")
-        elif seg_idx == 6:
-            self.draw_callout(draw, 1010, 865, 790, 835, "COOLING TOWER", (145, 140, 130), cam_x, cam_y, zoom)
-            self.draw_callout(draw, 1010, 665, 1010, 560, "PURE H2O VAPOR", (75, 155, 215), cam_x, cam_y, zoom)
-        elif seg_idx == 7:
-            self.draw_callout(draw, 530, 755, 530, 660, "CONTAINMENT DOME (+1m)", (115, 120, 125), cam_x, cam_y, zoom)
-        elif seg_idx == 8:
-            self.draw_temp_gauge(draw, lerp(745, 1064, min(seg_progress * 1.5, 1.0)), "CORE TEMPERATURE")
-            self.draw_callout(draw, 285, 1070, 210, 960, "BACKUP GENERATORS", (215, 165, 35), cam_x, cam_y, zoom)
-            self.draw_callout(draw, 300, 845, 300, 735, "GRAVITY WATER TANK", (85, 165, 220), cam_x, cam_y, zoom)
-        elif seg_idx == 9:
-            self.draw_callout(draw, 180, 1100, 340, 990, "SPENT FUEL POOL", (65, 155, 225), cam_x, cam_y, zoom)
-        elif seg_idx == 10:
-            c_box = [130, 1150, 950, 1640]
-            draw.rounded_rectangle(c_box, radius=32, fill=(250, 246, 235), outline=(45, 55, 65), width=5)
-            draw.rounded_rectangle([240, 1330, 305, 1415], radius=12, fill=(125, 135, 145), outline=(40, 45, 50), width=4)
-            draw.ellipse([345, 1320, 405, 1375], fill=(235, 65, 55), outline=(140, 30, 25), width=3)
-            draw.rounded_rectangle([340, 1355, 410, 1415], radius=18, fill=(235, 65, 55), outline=(140, 30, 25), width=3)
-            draw.text((205, 1465), "1 FUEL PELLET", font=self.font_card, fill=(40, 45, 50))
-            draw.text((515, 1340), "=", font=self.font_word, fill=(235, 165, 40))
-            for cx_c, cy_c in [(690, 1395), (745, 1395), (800, 1395), (715, 1350), (770, 1350), (742, 1305)]:
-                draw.regular_polygon((cx_c, cy_c, 34), n_sides=6, fill=(55, 60, 65), outline=(25, 30, 35))
-            draw.text((645, 1465), "1 TON OF COAL", font=self.font_card, fill=(40, 45, 50))
-        elif seg_idx == 11:
-            for c_x, c_y0, c_s, c_col in self.confetti:
-                cy_now = (c_y0 + seg_progress * 950) % 1920
-                cx_now = c_x + math.sin(global_time * 5 + c_x) * 18
-                draw.rectangle([cx_now - c_s, cy_now - c_s * 1.6, cx_now + c_s, cy_now + c_s * 1.6], fill=c_col)
-
-        # 11. Top Center Word-by-Word Pop Caption
-        if current_word:
-            w_text = current_word.upper()
-            bbox = draw.textbbox((0, 0), w_text, font=self.font_word)
-            tw = bbox[2] - bbox[0]
-            wx_pos = (1080 - tw) // 2
-            wy_pos = 360
-
-            for dx in (-5, -3, 0, 3, 5):
-                for dy in (-5, -3, 0, 3, 5):
-                    if dx != 0 or dy != 0:
-                        draw.text((wx_pos + dx, wy_pos + dy), w_text, font=self.font_word, fill=(35, 45, 55))
-            draw.text((wx_pos, wy_pos), w_text, font=self.font_word, fill=(255, 255, 255))
-
-        return img
+    ffmpeg_proc.stdin.close()
+    ffmpeg_proc.wait()
 
 
 def upload_to_youtube(video_path, title, refresh_token):
@@ -696,11 +1032,14 @@ def upload_to_youtube(video_path, title, refresh_token):
     )
     youtube = build("youtube", "v3", credentials=creds)
 
+    # ضمان أن العنوان أقل من 95 حرفاً لتجنب خطأ invalidTitle في YouTube API
+    clean_title = f"{title[:70]} #nuclear #science #shorts"[:95]
+
     body = {
         "snippet": {
-            "title": f"{title[:80]} #engineering #science #nuclear #howitworks #shorts",
-            "description": f"{title}\n\nStep-by-step animated explainer on how a nuclear power plant works.\n#engineering #science #howitworks #nuclearpower #technology #shorts",
-            "tags": ["nuclear power plant", "how it works", "engineering", "science", "animation", "shorts"],
+            "title": clean_title,
+            "description": f"{title}\n\n3D Animated Explainer: How a Nuclear Power Plant Works.\n#engineering #science #howitworks #nuclearpower #shorts",
+            "tags": ["nuclear power plant", "how it works", "engineering", "science", "3d animation", "shorts"],
             "categoryId": "28"
         },
         "status": {
@@ -750,11 +1089,9 @@ def upload_to_facebook_reels(video_path, title, page_id):
 
 
 def assemble_and_publish():
-    title = "How to Build a Nuclear Power Plant Step-by-Step! ⚛️⚡"
-    font_path = ensure_english_font()
-    renderer = NuclearPlantRenderer(font_path)
+    title = "How to Build a Nuclear Power Plant Step-by-Step!"
 
-    print("🎙️ Step 1: Generating Natural English Voiceover & SFX for all 12 stages...", flush=True)
+    print("🎙️ Step 1: Generating 100% Consistent English Voiceover & SFX...", flush=True)
     seg_audios = []
     seg_durations = []
     for idx, seg in enumerate(NUCLEAR_PLANT_SEGMENTS):
@@ -777,46 +1114,15 @@ def assemble_and_publish():
         "-i", "audio_list.txt", "-c", "copy", master_audio
     ], check=True)
 
-    print("🎬 Step 2: Rendering Continuous 30-FPS Programmatic Animation Stream...", flush=True)
-    fps = 30
-    raw_video = "raw_programmatic.mp4"
-    ffmpeg_proc = subprocess.Popen([
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "rawvideo", "-vcodec", "rawvideo",
-        "-s", "1080x1920", "-pix_fmt", "rgb24", "-r", str(fps),
-        "-i", "-",
-        "-i", master_audio,
-        "-map", "0:v", "-map", "1:a",
-        "-c:v", "libx264", "-preset", "fast", "-profile:v", "high", "-crf", "16",
-        "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "192k",
-        "-shortest", raw_video
-    ], stdin=subprocess.PIPE)
-
-    global_t = 0.0
-    dt = 1.0 / fps
-    for seg_idx, seg in enumerate(NUCLEAR_PLANT_SEGMENTS):
-        seg_dur = seg_durations[seg_idx]
-        seg_frames = max(int(round(seg_dur * fps)), 1)
-        words = re.sub(r'[,.?!—-]', '', seg["narration"]).split() or [""]
-
-        for f_i in range(seg_frames):
-            prog = f_i / max(seg_frames - 1, 1)
-            w_idx = min(int(prog * len(words)), len(words) - 1)
-            curr_word = words[w_idx]
-
-            frame_img = renderer.render_frame(seg_idx, prog, global_t, curr_word)
-            ffmpeg_proc.stdin.write(frame_img.tobytes())
-            global_t += dt
-
-    ffmpeg_proc.stdin.close()
-    ffmpeg_proc.wait()
+    print("🎬 Step 2: Rendering True 3D Three.js WebGL Animation Stream...", flush=True)
+    raw_video = "raw_3d.mp4"
+    render_threejs_video(seg_durations, master_audio, raw_video)
 
     final_video = "final_short.mp4"
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
         "-i", raw_video,
-        "-f", "lavfi", "-i", "anoisesrc=c=pink:a=0.006",
+        "-f", "lavfi", "-i", "anoisesrc=c=pink:a=0.005",
         "-filter_complex",
         "[1:a]lowpass=f=260[bg];[0:a]volume=1.15[fg];[fg][bg]amix=inputs=2:duration=first:dropout_transition=1[a]",
         "-map", "0:v", "-map", "[a]",
