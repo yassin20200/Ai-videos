@@ -5,27 +5,28 @@ on:
     - cron: '0 18 * * *'
   workflow_dispatch:
     inputs:
-      reciter_name:
-        description: 'اختر صوت القارئ للتلاوة القرآنية'
+      teacher_voice:
+        description: 'اختر صوت المدرس في الشرح العلمي'
         required: true
-        default: 'Yasser_Ad-Dussary'
+        default: 'ar-JO-TaimNeural'
         type: choice
         options:
-          - Yasser_Ad-Dussary
-          - Maher_AlMuaiqly
-          - Mishary_Alafasy
-          - Nasser_AlQatami
-          - AbdulBaset_Murattal
-          - Minshawy_Murattal
-      quran_story:
-        description: 'اختر القصة القرآنية للمحاكاة البصرية'
+          - ar-JO-TaimNeural
+          - ar-EG-ShakirNeural
+          - ar-SA-HamedNeural
+      explainer_topic:
+        description: 'موضوع الفيديو الهندسي (3D X-Ray Explainer)'
         required: true
-        default: 'musa_parting_sea'
+        default: 'water_heater_15_scenes'
         type: choice
         options:
-          - musa_parting_sea
-          - hijrah_cave_thawr
-          - yunus_in_whale
+          - water_heater_15_scenes
+          - custom_engineering_topic
+      custom_prompt:
+        description: 'اتركه فارغاً لفيديو السخان (أو اكتب اسم جهاز آخر لشرحه مستقبلاً)'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   build-and-publish:
@@ -58,7 +59,8 @@ jobs:
           FB_PAGE_IDS: ${{ secrets.FB_PAGE_IDS }}
           IG_USER_IDS: ${{ secrets.IG_USER_IDS }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
-          RECITER_NAME: ${{ inputs.reciter_name }}
-          QURAN_STORY: ${{ inputs.quran_story }}
+          TEACHER_VOICE: ${{ inputs.teacher_voice }}
+          EXPLAINER_TOPIC: ${{ inputs.explainer_topic }}
+          CUSTOM_PROMPT: ${{ inputs.custom_prompt }}
         run: |
           python main.py
