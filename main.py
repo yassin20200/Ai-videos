@@ -1,9 +1,7 @@
 import os
 import re
-import math
 import json
 import time
-import random
 import shutil
 import urllib.parse
 import subprocess
@@ -16,7 +14,7 @@ from googleapiclient.http import MediaFileUpload
 from gradio_client import Client, handle_file
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 
-print("🚀 بدء تشغيل استوديو الإنتاج الثلاثي الأبعاد (3D AI + Programmatic HUD)...", flush=True)
+print("🚀 Starting Smooth English Historical Shorts Studio (The 1859 Pig War)...", flush=True)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 ENGLISH_VOICE = os.getenv("ENGLISH_VOICE", "en-US-AndrewMultilingualNeural").strip() or "en-US-AndrewMultilingualNeural"
@@ -56,191 +54,109 @@ META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "").strip()
 
 GRAPH_API = "https://graph.facebook.com/v21.0"
 FONT_BOLD_PATH = "Montserrat-ExtraBold.ttf"
-MASTER_SEED = 909101
+MASTER_SEED = 185901
 
 os.environ.pop("HF_TOKEN", None)
 EXHAUSTED_ZEROGPU_TOKENS = set()
 
 SFX_LIBRARY = {
-    "splash": ("https://actions.google.com/sounds/v1/water/water_splashing.ogg", 0.28),
-    "turbine": ("https://actions.google.com/sounds/v1/science_fiction/sci_fi_osh.ogg", 0.24),
-    "alarm": ("https://actions.google.com/sounds/v1/alarms/beep_short.ogg", 0.28),
-    "clunk": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.32),
+    "drums": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.30),
+    "waves": ("https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg", 0.22),
+    "pig": ("https://actions.google.com/sounds/v1/cartoon/pop.ogg", 0.28),
+    "shot": ("https://actions.google.com/sounds/v1/impacts/crash.ogg", 0.32),
     "whoosh": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.26),
-    "bubbles": ("https://actions.google.com/sounds/v1/water/air_woosh_underwater.ogg", 0.26),
-    "pop": ("https://actions.google.com/sounds/v1/cartoon/pop.ogg", 0.28),
-    "cheer": ("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg", 0.28)
+    "cheer": ("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg", 0.26)
 }
 
 STYLE_PREFIX = (
-    "Masterpiece 3D isometric cutaway engineering diorama render, Blender Cycles & Unreal Engine 5 studio lighting, "
-    "clean stylized 3D scientific visualization on a sunny riverside concrete pad with blue sky and fluffy white 3D clouds, "
-    "ultra-crisp 8k, vertical 9:16, no text, no watermarks. "
+    "Masterpiece stylized 3D cinematic historical animation render, Unreal Engine 5 & Pixar-grade rich textures, "
+    "dramatic natural lighting, expressive 3D characters, 8k vertical 9:16, no text, no watermarks. "
 )
 
-NUCLEAR_PLANT_STAGES = [
+PIG_WAR_SCENES = [
     {
         "id": 0,
-        "sfx": "splash",
-        "narration": "If you drop uranium into a tank of water, the uranium gets hot, and you have a nuclear reactor.",
-        "image_prompt": (
-            f"{STYLE_PREFIX}A transparent 3D cutaway glass cylindrical water tank on a concrete pad with a yellow gantry crane "
-            f"lowering glowing warm orange vertical uranium fuel rods into crystal-clear blue water with rising white bubbles."
-        ),
-        "motion_prompt": "3D engineering animation, glowing orange uranium fuel rods submerged in the transparent water tank as white bubbles rise smoothly upward",
-        "callouts": [
-            {"target": (540, 1060), "box": (770, 940), "text": "URANIUM FUEL", "color": (215, 132, 42)},
-            {"target": (420, 1180), "box": (250, 1260), "text": "WATER TANK", "color": (78, 158, 215)}
-        ]
+        "sfx": "drums",
+        "narration": "In 1859, the United States and the British Empire nearly went to full-scale war, over a single pig eating a potato.",
+        "image_prompt": f"{STYLE_PREFIX}1859 American soldiers in blue uniforms and British soldiers in red coats aiming cannons at each other on a green island with a black pig eating a potato in the middle.",
+        "motion_prompt": "Smooth 3D cinematic camera push-in toward the black pig munching a potato between the two aiming armies, dramatic wind moving the grass"
     },
     {
         "id": 1,
-        "sfx": "turbine",
-        "narration": "But hot water doesn't make electricity. So you let it boil, and use steam to spin a turbine connected to a generator.",
-        "image_prompt": (
-            f"{STYLE_PREFIX}A 3D cutaway boiling nuclear water reactor tank connected by a sleek silver overhead steam pipe "
-            f"to a 3D cutaway spinning multi-blade metal steam turbine and a green electric generator lighting up a glowing streetlamp."
-        ),
-        "motion_prompt": "3D engineering animation, white steam flows through the pipe spinning the metal turbine blades rapidly as the streetlamp glows brightly",
-        "callouts": [
-            {"target": (460, 740), "box": (270, 680), "text": "STEAM PIPE", "color": (120, 145, 165)},
-            {"target": (620, 1080), "box": (580, 910), "text": "3D TURBINE", "color": (110, 128, 145)},
-            {"target": (810, 1080), "box": (820, 910), "text": "GENERATOR", "color": (58, 168, 130)}
-        ]
+        "sfx": "waves",
+        "narration": "It all started on San Juan Island, a tiny piece of land claimed by both countries, where American settlers and British workers lived side by side.",
+        "image_prompt": f"{STYLE_PREFIX}Wide 3D shot of San Juan Island in 1859 with an American wooden cabin and US flag on one side and a British trading post with a Union Jack flag on the other.",
+        "motion_prompt": "Smooth 3D aerial camera glide across the green island showing the American and British cabins with flags waving in the breeze"
     },
     {
         "id": 2,
-        "sfx": "alarm",
-        "narration": "However, uranium keeps getting hotter and hotter. So you slide control rods between the fuel to absorb the reaction and cool it down.",
-        "image_prompt": (
-            f"{STYLE_PREFIX}Close-up 3D cutaway of the nuclear reactor core inside the water tank: dark metallic grey cylindrical control rods "
-            f"sliding vertically down from the top cap right between the glowing orange uranium fuel rods in bubbling blue water."
-        ),
-        "motion_prompt": "3D engineering cutaway animation, dark metallic control rods slide smoothly downward between the glowing orange fuel rods in bubbling water",
-        "gauge_mode": "cool_down",
-        "callouts": [
-            {"target": (540, 860), "box": (770, 780), "text": "CONTROL RODS", "color": (68, 78, 88)}
-        ]
+        "sfx": "pig",
+        "narration": "One morning, an American farmer named Lyman Cutlar walked out to his garden and found a giant black pig digging up his prized potatoes.",
+        "image_prompt": f"{STYLE_PREFIX}An angry bearded 1859 American farmer in suspenders standing on his cabin porch staring at a large black pig digging up potatoes in his garden.",
+        "motion_prompt": "3D character animation, the bearded farmer glares in disbelief as the black pig happily digs and munches potatoes in the garden"
     },
     {
         "id": 3,
-        "sfx": "clunk",
-        "narration": "In an emergency, you need to stop it fast. So you hang the rods above the core on electromagnets. If power cuts out, they drop right in.",
-        "image_prompt": (
-            f"{STYLE_PREFIX}Close-up 3D cutaway of the top of the nuclear reactor vessel: red and gold electromagnet coils holding "
-            f"the dark grey control rods suspended above the glowing uranium fuel core inside the transparent water tank."
-        ),
-        "motion_prompt": "3D engineering animation, the dark control rods drop downward into the glowing reactor core as water bubbles rise",
-        "callouts": [
-            {"target": (540, 720), "box": (760, 650), "text": "ELECTROMAGNETS", "color": (215, 55, 45)}
-        ]
+        "sfx": "shot",
+        "narration": "Furious because this wasn't the first time, Cutlar grabbed his rifle and shot the pig dead on the spot.",
+        "image_prompt": f"{STYLE_PREFIX}The bearded 1859 American farmer in suspenders aiming an old musket rifle with a puff of white smoke by the wooden garden fence as birds fly up from the trees.",
+        "motion_prompt": "3D cinematic animation, white smoke billows from the musket barrel as startled birds fly up from the pine trees"
     },
     {
         "id": 4,
-        "sfx": "bubbles",
-        "narration": "But water touching uranium gets radioactive, and right now it spins your turbine. So you seal it in a closed loop to boil clean water in a second loop.",
-        "image_prompt": (
-            f"{STYLE_PREFIX}Two side-by-side 3D cutaway cylindrical tanks: the left reactor tank with glowing uranium connected by red and blue "
-            f"heat-exchanger pipes to a glowing copper U-tube coil boiling clean blue water inside the right secondary tank."
-        ),
-        "motion_prompt": "3D fluid and thermal animation, glowing heat flows through the copper heat-exchanger coil boiling clean blue water in the second tank",
-        "callouts": [
-            {"target": (460, 1080), "box": (310, 1250), "text": "CLOSED LOOP", "color": (215, 132, 42)},
-            {"target": (680, 960), "box": (790, 800), "text": "SECONDARY LOOP", "color": (78, 158, 215)}
-        ]
+        "sfx": "whoosh",
+        "narration": "There was just one problem: the pig belonged to an Irishman working for the British, who demanded one hundred dollars and threatened to have Cutlar arrested.",
+        "image_prompt": f"{STYLE_PREFIX}A furious British-Irish official in an 1859 tweed coat and top hat shouting and pointing his finger in the face of the bearded American farmer.",
+        "motion_prompt": "3D expressive character animation, the official in the top hat gestures angrily while arguing with the stubborn bearded farmer"
     },
     {
         "id": 5,
-        "sfx": "splash",
-        "narration": "Next, you condense the steam back into water to reuse it. You can cool it with river water, but the river heats up enough to cook the fish.",
-        "image_prompt": (
-            f"{STYLE_PREFIX}3D cutaway view of blue and red cooling pipes running from the power plant condenser into a blue river "
-            f"where a warm orange thermal water plume surrounds stylized 3D fish swimming in the river."
-        ),
-        "motion_prompt": "3D animation, warm water flows from the pipes into the blue river as stylized 3D fish swim through the water",
-        "gauge_mode": "river_70",
-        "callouts": [
-            {"target": (520, 1020), "box": (320, 880), "text": "STEAM -> WATER", "color": (78, 158, 215)}
-        ]
+        "sfx": "drums",
+        "narration": "Terrified of British arrest, the American settlers called the U.S. Army, and Captain George Pickett landed on the island with sixty-six soldiers and cannons.",
+        "image_prompt": f"{STYLE_PREFIX}1859 US Army soldiers in dark blue uniforms led by Captain George Pickett marching onto the rocky island beach pushing heavy brass cannons under an American flag.",
+        "motion_prompt": "Epic 3D historical animation, American soldiers in blue uniforms march forward pushing brass cannons up the grassy beach as the flag waves"
     },
     {
         "id": 6,
-        "sfx": "whoosh",
-        "narration": "So you build a giant cooling tower. Hot water rains down inside, air carries heat up, and that cloud on top is just pure water vapor.",
-        "image_prompt": (
-            f"{STYLE_PREFIX}A giant 3D semi-transparent X-ray cutaway concrete hyperboloid nuclear cooling tower showing hot water spraying "
-            f"down like rain inside while white fluffy pure H2O water vapor clouds billow out of the wide top opening into the blue sky."
-        ),
-        "motion_prompt": "3D engineering cutaway animation, water sprays downward inside the cooling tower while white steam clouds rise smoothly out of the top",
-        "callouts": [
-            {"target": (540, 1020), "box": (290, 920), "text": "COOLING TOWER", "color": (128, 122, 112)},
-            {"target": (540, 580), "box": (770, 520), "text": "PURE H2O VAPOR", "color": (78, 158, 215)}
-        ]
+        "sfx": "waves",
+        "narration": "The British were outraged, so they sent five massive warships carrying seventy cannons and over two thousand Royal Marines to surround the beach.",
+        "image_prompt": f"{STYLE_PREFIX}Five massive 1859 British Royal Navy wooden warships with open cannon ports and British flags anchored in the bay facing the tiny American camp on the hill.",
+        "motion_prompt": "Epic 3D cinematic camera pan across the five massive British warships floating on the rippling ocean bay facing the island"
     },
     {
         "id": 7,
-        "sfx": "clunk",
-        "narration": "If anything leaks, radiation could escape. So you build a steel and concrete containment dome over a meter thick around the reactor.",
-        "image_prompt": (
-            f"{STYLE_PREFIX}A massive 3D cutaway reinforced grey concrete and steel dome structure over a meter thick enclosing "
-            f"the glowing nuclear reactor vessel and secondary heat-exchanger tank inside, with the cooling tower in the background."
-        ),
-        "motion_prompt": "3D architectural cutaway animation, smooth camera push-in showing the thick reinforced concrete and steel containment dome around the reactor",
-        "callouts": [
-            {"target": (540, 660), "box": (540, 520), "text": "CONTAINMENT DOME (+1m)", "color": (105, 112, 120)}
-        ]
+        "sfx": "drums",
+        "narration": "For weeks, both armies stood nose to nose with loaded cannons, trading insults every day to trick the other side into firing the first shot.",
+        "image_prompt": f"{STYLE_PREFIX}Close-up 3D standoff between 1859 American soldiers in blue and British Royal Marines in red coats standing nose-to-nose beside loaded brass cannons.",
+        "motion_prompt": "Tense 3D cinematic camera movement between the glaring American and British soldiers standing beside loaded cannons"
     },
     {
         "id": 8,
-        "sfx": "alarm",
-        "narration": "If the pumps fail, the core will overheat. So you add backup generators, and a high water tank that floods the core by gravity alone.",
-        "image_prompt": (
-            f"{STYLE_PREFIX}Beside the 3D cutaway concrete containment dome stand yellow 3D backup diesel generators and a tall steel tower "
-            f"holding an elevated blue water tank with a pipe pouring cooling water down into the reactor core by gravity."
-        ),
-        "motion_prompt": "3D engineering animation, blue cooling water flows downward from the elevated gravity water tank into the glowing reactor core",
-        "gauge_mode": "overheat_1064",
-        "callouts": [
-            {"target": (310, 1120), "box": (260, 960), "text": "BACKUP GENERATORS", "color": (212, 160, 36)},
-            {"target": (330, 760), "box": (330, 610), "text": "GRAVITY WATER TANK", "color": (78, 158, 215)}
-        ]
+        "sfx": "shot",
+        "narration": "When the British Governor ordered his Admiral to attack the Americans, the stunned Admiral refused, shouting: I will not start a war between two great nations over a squabble about a pig!",
+        "image_prompt": f"{STYLE_PREFIX}An older British Rear Admiral in a navy blue coat with gold epaulets slamming his hand on a map table aboard his warship, refusing an order to attack.",
+        "motion_prompt": "3D dramatic character animation, the British Admiral shakes his head firmly over the map table aboard the wooden warship"
     },
     {
         "id": 9,
-        "sfx": "bubbles",
-        "narration": "Used nuclear fuel stays hot for years, so you submerge it in a deep water pool where it glows bright blue.",
-        "image_prompt": (
-            f"{STYLE_PREFIX}Close-up 3D cutaway of a deep rectangular concrete spent nuclear fuel pool filled with crystal-clear water, "
-            f"where submerged metallic fuel racks at the bottom emit a mesmerizing bright cyan-blue Cherenkov radiation glow."
-        ),
-        "motion_prompt": "3D animation, submerged nuclear fuel assemblies glow with a bright electric blue Cherenkov light under rippling clear water",
-        "callouts": [
-            {"target": (540, 1060), "box": (540, 840), "text": "SPENT FUEL POOL (CHERENKOV GLOW)", "color": (45, 142, 220)}
-        ]
+        "sfx": "whoosh",
+        "narration": "Once news finally reached Washington and London, both governments were horrified and rushed diplomats to the island to calm everyone down.",
+        "image_prompt": f"{STYLE_PREFIX}An elderly decorated American General stepping off a steamship onto the island pier, shaking hands with the British Admiral as soldiers lower their rifles.",
+        "motion_prompt": "3D cinematic animation, the American General and British Admiral shake hands warmly on the pier as soldiers relax in the background"
     },
     {
         "id": 10,
-        "sfx": "pop",
-        "narration": "One tiny uranium fuel pellet, the size of a gummy bear, produces as much electricity as an entire ton of coal.",
-        "image_prompt": (
-            f"{STYLE_PREFIX}3D macro comparison on a clean studio platform: a single tiny metallic grey cylindrical uranium fuel pellet "
-            f"next to a small red gummy bear on the left, balanced against a massive pile of black coal rocks on the right."
-        ),
-        "motion_prompt": "Clean 3D product animation, subtle camera orbit around the tiny metallic uranium fuel pellet and the massive pile of black coal",
-        "show_pellet_card": True,
-        "callouts": []
+        "sfx": "waves",
+        "narration": "The two armies peacefully shared the island for twelve years, until an international judge finally awarded San Juan Island to the United States.",
+        "image_prompt": f"{STYLE_PREFIX}1859 American soldiers in blue and British soldiers in red coats sitting peacefully together around a campfire on the island clinking mugs under both flags.",
+        "motion_prompt": "Warm 3D animation, glowing campfire sparks rise as American and British soldiers laugh and clink mugs together peacefully"
     },
     {
         "id": 11,
         "sfx": "cheer",
-        "narration": "And congratulations! You just built a nuclear power plant.",
-        "image_prompt": (
-            f"{STYLE_PREFIX}Wide panoramic masterpiece 3D cutaway diorama of the complete working nuclear power plant on the sunny river pad: "
-            f"containment dome, primary and secondary loops, spinning turbine, green generator, giant cooling tower with white steam, and blue spent fuel pool."
-        ),
-        "motion_prompt": "Masterpiece 3D diorama animation, smooth panoramic camera pull-back showing the complete nuclear power plant operating in harmony",
-        "show_confetti": True,
-        "callouts": []
+        "narration": "And that is how the Pig War of 1859 ended in the history books, with zero human casualties, and one very unfortunate pig.",
+        "image_prompt": f"{STYLE_PREFIX}A proud bronze statue of the chubby pig holding a potato on a stone pedestal in the sunny green island meadow with an American flag waving behind it.",
+        "motion_prompt": "Smooth 3D camera pull-back revealing the bronze pig statue gleaming in the sunlight as the flag waves gently against the blue sky"
     }
 ]
 
@@ -328,19 +244,58 @@ def ensure_english_font():
     return "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
+def discover_uploaded_images_map():
+    valid_exts = (".jpg", ".jpeg", ".png", ".webp", ".jfif")
+    ignore_prefixes = ("scene_", "stage_", "temp_", "sub_", "base_", "raw_", "stretched_", "nuclear_")
+    raw_num_map = {}
+
+    for root_dir in [".", "images", "scenes"]:
+        if not os.path.exists(root_dir):
+            continue
+        for fname in os.listdir(root_dir):
+            low = fname.lower()
+            if low.endswith(valid_exts) and not low.startswith(ignore_prefixes):
+                full_p = os.path.join(root_dir, fname)
+                if os.path.isfile(full_p) and os.path.getsize(full_p) > 4000:
+                    trans = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+                    normalized = fname.translate(trans)
+                    nums = re.findall(r"\d+", normalized)
+                    if nums:
+                        idx_num = int(nums[0])
+                        if idx_num not in raw_num_map:
+                            raw_num_map[idx_num] = full_p
+
+    if 0 in raw_num_map:
+        return {k + 1: v for k, v in raw_num_map.items()}
+    return raw_num_map
+
+
+def save_clean_image(src_path, dst_file):
+    img = Image.open(src_path).convert("RGB").resize((1080, 1920), Image.Resampling.LANCZOS)
+    img = ImageEnhance.Contrast(img).enhance(1.04)
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=110, threshold=3))
+    img.save(dst_file, "JPEG", quality=98)
+
+
 def is_quota_error(err_text):
     t = str(err_text).lower()
     return "zerogpu" in t or "exceeded" in t or "quota" in t or "runs limit" in t
 
 
-def generate_3d_stage_image(stage_idx, image_prompt, dst_jpg):
+def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
+    scene_num = index + 1
+    if scene_num in uploaded_map:
+        src = uploaded_map[scene_num]
+        save_clean_image(src, dst_jpg)
+        print(f"📸 Using your uploaded Gemini image for Scene {scene_num}: ({src})!", flush=True)
+        return
+
     image_pool = HF_TOKENS[7:] + HF_TOKENS[:7] + [None]
     for space_name, steps in [("black-forest-labs/FLUX.1-dev", 24), ("black-forest-labs/FLUX.1-schnell", 4)]:
         for tok in image_pool:
             tok_key = "SERVER_IP" if tok is None else f"TOK_{tok[:12]}"
             if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
                 continue
-            label = "Free Server IP" if tok is None else f"HF Token ({tok[:10]}...)"
             try:
                 client = Client(space_name, token=tok, verbose=False)
                 if "dev" in space_name:
@@ -368,12 +323,8 @@ def generate_3d_stage_image(stage_idx, image_prompt, dst_jpg):
                 if isinstance(img_path, dict) and "path" in img_path:
                     img_path = img_path["path"]
                 if isinstance(img_path, str) and os.path.exists(img_path):
-                    img = Image.open(img_path).convert("RGB").resize((1080, 1920), Image.Resampling.LANCZOS)
-                    img = ImageEnhance.Contrast(img).enhance(1.05)
-                    img = ImageEnhance.Color(img).enhance(1.10)
-                    img = img.filter(ImageFilter.UnsharpMask(radius=1.3, percent=115, threshold=3))
-                    img.save(dst_jpg, "JPEG", quality=98)
-                    print(f"✨ Generated 8K 3D Render for Stage {stage_idx + 1} via ({space_name} - {label})!", flush=True)
+                    save_clean_image(img_path, dst_jpg)
+                    print(f"✨ Generated fallback image for Scene {scene_num} via {space_name}!", flush=True)
                     return
             except Exception as e:
                 if is_quota_error(e):
@@ -381,7 +332,7 @@ def generate_3d_stage_image(stage_idx, image_prompt, dst_jpg):
                     continue
                 break
 
-    raise RuntimeError(f"Failed to generate 3D image for Stage {stage_idx + 1}")
+    raise RuntimeError(f"Failed to obtain image for Scene {scene_num}")
 
 
 def extract_video_path(result):
@@ -402,11 +353,50 @@ def extract_video_path(result):
     return None
 
 
-def animate_3d_stage_with_wan(stage_idx, img_file, motion_prompt, out_raw_video):
-    full_motion = f"{motion_prompt}, photorealistic 3D engineering cutaway animation, smooth fluid motion, high quality, keep structure intact"
+def animate_scene_smoothly(index, start_img, next_img, motion_prompt, out_raw_video):
+    """
+    الطريقة السلسة المتفق عليها:
+    1. تحاول أولاً ربط صورة البداية بصورة النهاية عبر (multimodalart/wan-2-2-first-last-frame) لعمل انتقال متصل.
+    2. أو تحرك اللقطة عبر (zerogpu-aoti/wan2-2-fp8da-aoti-faster) بانسيابية تامة.
+    """
+    full_motion = f"{motion_prompt}, smooth continuous 3D cinematic animation, high quality, keep characters consistent"
     neg_prompt = "morphing, deforming, melting, warping, blurry, low quality, worst quality, text, watermark, nsfw"
-
     all_pool = [None] + HF_TOKENS
+
+    # 1. محاولة الربط الانتقالي First-Frame to Last-Frame إن توفرت الصورة التالية
+    if next_img and os.path.exists(next_img):
+        for pool_idx, tok in enumerate(all_pool[:5]):
+            tok_key = "FLF_IP" if tok is None else f"FLF_{tok[:12]}"
+            if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
+                continue
+            try:
+                flf_space = "multimodalart/wan-2-2-first-last-frame"
+                client = Client(flf_space, token=tok, verbose=False)
+                res = client.predict(
+                    start_image=handle_file(start_img),
+                    end_image=handle_file(next_img),
+                    prompt=full_motion,
+                    negative_prompt=neg_prompt,
+                    duration_seconds=3.0,
+                    steps=4,
+                    guidance_scale=1.0,
+                    guidance_scale_2=1.0,
+                    seed=MASTER_SEED + index,
+                    randomize_seed=False,
+                    api_name="/generate_video"
+                )
+                v_path = extract_video_path(res)
+                if v_path:
+                    shutil.copyfile(v_path, out_raw_video)
+                    print(f"🔗 Scene {index + 1} smoothly morphed (Start->End Frame) via {flf_space}!", flush=True)
+                    return True
+            except Exception as e:
+                if is_quota_error(e):
+                    EXHAUSTED_ZEROGPU_TOKENS.add(tok_key)
+                    continue
+                break
+
+    # 2. التحريك السينمائي المستمر عبر Wan 2.2 Faster
     for pool_idx, tok in enumerate(all_pool):
         tok_key = "SERVER_IP" if tok is None else f"TOK_{tok[:12]}"
         if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
@@ -414,24 +404,24 @@ def animate_3d_stage_with_wan(stage_idx, img_file, motion_prompt, out_raw_video)
         label = "Free Server IP" if tok is None else f"HF Token #{pool_idx} ({tok[:10]}...)"
         try:
             wan_space = "zerogpu-aoti/wan2-2-fp8da-aoti-faster"
-            print(f"🎬 Animating 3D Stage {stage_idx + 1} via ({wan_space} - {label})...", flush=True)
+            print(f"🎬 Animating Scene {index + 1} via ({wan_space} - {label})...", flush=True)
             client = Client(wan_space, token=tok, verbose=False)
             res = client.predict(
-                input_image=handle_file(img_file),
+                input_image=handle_file(start_img),
                 prompt=full_motion,
                 steps=5,
                 negative_prompt=neg_prompt,
                 duration_seconds=3.0,
                 guidance_scale=1.1,
                 guidance_scale_2=1.1,
-                seed=MASTER_SEED + stage_idx,
+                seed=MASTER_SEED + index,
                 randomize_seed=False,
                 api_name="/generate_video"
             )
             v_path = extract_video_path(res)
             if v_path:
                 shutil.copyfile(v_path, out_raw_video)
-                print(f"🎉 Stage {stage_idx + 1} animated via {wan_space} ({label})!", flush=True)
+                print(f"🎉 Scene {index + 1} animated via {wan_space} ({label})!", flush=True)
                 return True
         except Exception as e:
             if is_quota_error(e):
@@ -439,10 +429,10 @@ def animate_3d_stage_with_wan(stage_idx, img_file, motion_prompt, out_raw_video)
                 continue
             try:
                 ps = PinnedSpace(wan_space, token=tok)
-                up_img = ps.upload(img_file)
-                out = ps.call("/generate_video", [up_img, full_motion, 5, neg_prompt, 3.0, 1.1, 1.1, MASTER_SEED + stage_idx, False])
+                up_img = ps.upload(start_img)
+                out = ps.call("/generate_video", [up_img, full_motion, 5, neg_prompt, 3.0, 1.1, 1.1, MASTER_SEED + index, False])
                 ps.download_video(out, out_raw_video)
-                print(f"🎉 Stage {stage_idx + 1} animated via {wan_space} Pinned ({label})!", flush=True)
+                print(f"🎉 Scene {index + 1} animated via {wan_space} Pinned ({label})!", flush=True)
                 return True
             except Exception as e2:
                 if is_quota_error(e2):
@@ -452,9 +442,9 @@ def animate_3d_stage_with_wan(stage_idx, img_file, motion_prompt, out_raw_video)
     return False
 
 
-def build_segment_audio(seg_idx, segment, out_wav):
-    text = segment["narration"]
-    sfx_key = segment["sfx"]
+def build_segment_audio(seg_idx, scene, out_wav):
+    text = scene["narration"]
+    sfx_key = scene["sfx"]
 
     raw_mp3 = f"seg_raw_{seg_idx}.mp3"
     trimmed_voice = f"seg_trim_{seg_idx}.wav"
@@ -464,7 +454,7 @@ def build_segment_audio(seg_idx, segment, out_wav):
     for v_name in [ENGLISH_VOICE, "en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural", "en-US-ChristopherNeural"]:
         try:
             subprocess.run([
-                "edge-tts", "--voice", v_name, "--rate=+8%",
+                "edge-tts", "--voice", v_name, "--rate=+5%",
                 "--text", text, "--write-media", raw_mp3
             ], check=True, timeout=25, stderr=subprocess.DEVNULL)
             if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
@@ -479,13 +469,13 @@ def build_segment_audio(seg_idx, segment, out_wav):
         with open(raw_mp3, "wb") as f:
             f.write(r.content)
 
-    warm_eq = "highpass=f=80,equalizer=f=185:width_type=o:width=1.5:g=2.5,equalizer=f=3800:width_type=o:width=2.0:g=2.0"
+    warm_eq = "highpass=f=75,equalizer=f=180:width_type=o:width=1.5:g=2.5,equalizer=f=3600:width_type=o:width=2.0:g=1.8"
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
         "-i", raw_mp3,
         "-af", (
-            f"silenceremove=start_periods=1:start_silence=0.02:start_threshold=-42dB,"
-            f"areverse,silenceremove=start_periods=1:start_silence=0.04:start_threshold=-42dB,areverse,"
+            f"silenceremove=start_periods=1:start_silence=0.03:start_threshold=-42dB,"
+            f"areverse,silenceremove=start_periods=1:start_silence=0.05:start_threshold=-42dB,areverse,"
             f"{warm_eq}"
         ),
         "-ar", "44100", "-ac", "2", trimmed_voice
@@ -496,9 +486,9 @@ def build_segment_audio(seg_idx, segment, out_wav):
         "-of", "default=noprint_wrappers=1:nokey=1", trimmed_voice
     ], capture_output=True, text=True, check=True)
     v_dur = float(probe.stdout.strip() or "4.5")
-    final_dur = round(v_dur + 0.16, 2)
+    final_dur = round(v_dur + 0.18, 2)
 
-    sfx_url, sfx_vol = SFX_LIBRARY.get(sfx_key, SFX_LIBRARY["pop"])
+    sfx_url, sfx_vol = SFX_LIBRARY.get(sfx_key, SFX_LIBRARY["whoosh"])
     try:
         r = requests.get(sfx_url, timeout=15)
         if r.ok and len(r.content) > 1000:
@@ -510,8 +500,8 @@ def build_segment_audio(seg_idx, segment, out_wav):
                 "-i", sfx_ogg,
                 "-i", trimmed_voice,
                 "-filter_complex",
-                f"[1:a]atrim=0:{min(final_dur, 2.0)},afade=t=in:d=0.04,afade=t=out:st={max(min(final_dur, 2.0) - 0.35, 0.1)}:d=0.35,volume={sfx_vol}[s];"
-                f"[2:a]adelay=30|30,volume=1.35[v];"
+                f"[1:a]atrim=0:{min(final_dur, 2.0)},afade=t=in:d=0.05,afade=t=out:st={max(min(final_dur, 2.0) - 0.35, 0.1)}:d=0.35,volume={sfx_vol}[s];"
+                f"[2:a]adelay=40|40,volume=1.35[v];"
                 f"[0:a][s][v]amix=inputs=3:duration=first:dropout_transition=0[a]",
                 "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
             ], check=True)
@@ -524,169 +514,81 @@ def build_segment_audio(seg_idx, segment, out_wav):
         "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={final_dur}",
         "-i", trimmed_voice,
         "-filter_complex",
-        "[1:a]adelay=30|30,volume=1.35[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
+        "[1:a]adelay=40|40,volume=1.35[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
         "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
     ], check=True)
     return final_dur
 
 
-def lerp(a, b, t):
-    return a + (b - a) * t
+def render_english_subtitle_png(phrase_text, png_path):
+    font_file = ensure_english_font()
+    img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    font = ImageFont.truetype(font_file, 52)
+
+    words = phrase_text.upper().split()
+    full_text = " ".join(words)
+    bbox = draw.textbbox((0, 0), full_text, font=font)
+    w = bbox[2] - bbox[0]
+    h = bbox[3] - bbox[1]
+    x_pos = (1080 - w) // 2
+    y_pos = 1520
+
+    pad_x, pad_y = 36, 18
+    draw.rounded_rectangle(
+        [(x_pos - pad_x, y_pos - pad_y), (x_pos + w + pad_x, y_pos + h + pad_y + 12)],
+        radius=24,
+        fill=(10, 14, 22, 210),
+        outline=(255, 200, 45, 235),
+        width=3
+    )
+
+    curr_x = x_pos
+    for idx, word in enumerate(words):
+        word_str = word + (" " if idx < len(words) - 1 else "")
+        w_box = draw.textbbox((0, 0), word_str, font=font)
+        word_w = w_box[2] - w_box[0]
+        color = (255, 215, 45, 255) if idx == len(words) - 1 else (255, 255, 255, 255)
+
+        for dx in (-3, 0, 3):
+            for dy in (-3, 0, 3):
+                if dx != 0 or dy != 0:
+                    draw.text((curr_x + dx, y_pos + dy), word_str, font=font, fill=(0, 0, 0, 255))
+        draw.text((curr_x, y_pos), word_str, font=font, fill=color)
+        curr_x += word_w
+
+    img.save(png_path, "PNG")
 
 
-class ProgrammaticHUDOverlay:
-    def __init__(self, font_path):
-        self.font_word = ImageFont.truetype(font_path, 78)
-        self.font_label = ImageFont.truetype(font_path, 28)
-        self.font_gauge_num = ImageFont.truetype(font_path, 52)
-        self.font_gauge_sub = ImageFont.truetype(font_path, 26)
-        self.font_card = ImageFont.truetype(font_path, 32)
-        random.seed(42)
-        self.confetti = [
-            (
-                random.uniform(40, 1040),
-                random.uniform(-600, 1200),
-                random.uniform(5, 10),
-                random.choice([(255, 80, 80), (60, 180, 255), (255, 215, 40), (80, 230, 120), (200, 100, 255)])
-            )
-            for _ in range(90)
-        ]
+def build_scene_clip(index, scene, all_scene_imgs):
+    narration = scene["narration"]
+    audio_file = f"scene_{index}.wav"
+    duration = build_segment_audio(index, scene, audio_file)
 
-    def draw_callout_badge(self, draw, target_xy, box_xy, text, bg_color, progress):
-        if progress < 0.08:
-            return
-        tx, ty = target_xy
-        bx, by = box_xy
-        bbox = draw.textbbox((0, 0), text, font=self.font_label)
-        tw = bbox[2] - bbox[0]
-        th = bbox[3] - bbox[1]
-        pad_x, pad_y = 22, 13
-        bw = tw + pad_x * 2
-        bh = th + pad_y * 2
+    start_img = all_scene_imgs[index]
+    next_img = all_scene_imgs[index + 1] if index + 1 < len(all_scene_imgs) else None
 
-        bx = max(bw // 2 + 24, min(1080 - bw // 2 - 24, int(bx)))
-        by = max(bh // 2 + 120, min(1920 - bh // 2 - 120, int(by)))
-
-        line_prog = min(1.0, (progress - 0.08) * 3.5)
-        cur_bx = int(lerp(tx, bx, line_prog))
-        cur_by = int(lerp(ty, by, line_prog))
-
-        draw.line([(tx, ty), (cur_bx, cur_by)], fill=(255, 255, 255, 235), width=5)
-        draw.line([(tx, ty), (cur_bx, cur_by)], fill=(30, 40, 50, 255), width=3)
-        draw.ellipse([tx - 7, ty - 7, tx + 7, ty + 7], fill=(255, 255, 255, 255), outline=(30, 40, 50, 255), width=2)
-
-        if line_prog >= 0.85:
-            rect = [bx - bw // 2, by - bh // 2, bx + bw // 2, by + bh // 2]
-            draw.rounded_rectangle(rect, radius=24, fill=(*bg_color, 235), outline=(255, 255, 255, 255), width=3)
-            draw.text((bx - tw // 2, by - th // 2 - 2), text, font=self.font_label, fill=(255, 255, 255, 255))
-
-    def draw_temp_gauge(self, draw, temp_c, label="CORE TEMPERATURE"):
-        card = [250, 1490, 830, 1690]
-        draw.rounded_rectangle(card, radius=28, fill=(248, 246, 238, 240), outline=(40, 50, 60, 255), width=5)
-
-        bar_bg = [290, 1530, 570, 1582]
-        draw.rounded_rectangle(bar_bg, radius=22, fill=(225, 225, 225, 255), outline=(55, 65, 75, 255), width=3)
-
-        ratio = max(0.08, min(1.0, (temp_c - 150.0) / 1050.0))
-        fill_w = int((570 - 290 - 8) * ratio)
-        bar_color = (230, 55, 45, 255) if temp_c >= 700 else (45, 185, 85, 255)
-        draw.rounded_rectangle([294, 1534, 294 + fill_w, 1578], radius=18, fill=bar_color)
-
-        t_str = f"{int(temp_c)}°C"
-        draw.text((592, 1524), t_str, font=self.font_gauge_num, fill=bar_color)
-
-        bbox = draw.textbbox((0, 0), label, font=self.font_gauge_sub)
-        lw = bbox[2] - bbox[0]
-        draw.text((540 - lw // 2, 1616), label, font=self.font_gauge_sub, fill=(40, 50, 60, 255))
-
-    def render_hud_on_frame(self, base_rgb_img, stage, prog, current_word):
-        img = base_rgb_img.convert("RGBA")
-        draw = ImageDraw.Draw(img, "RGBA")
-
-        for c_item in stage.get("callouts", []):
-            self.draw_callout_badge(draw, c_item["target"], c_item["box"], c_item["text"], c_item["color"], prog)
-
-        g_mode = stage.get("gauge_mode")
-        if g_mode == "cool_down":
-            t_val = lerp(468, 1200, prog / 0.48) if prog < 0.48 else lerp(1200, 300, (prog - 0.48) / 0.52)
-            self.draw_temp_gauge(draw, t_val, "CORE TEMPERATURE")
-        elif g_mode == "river_70" and prog > 0.38:
-            self.draw_temp_gauge(draw, 70, "RIVER WATER TEMP")
-        elif g_mode == "overheat_1064":
-            self.draw_temp_gauge(draw, lerp(745, 1064, min(prog * 1.6, 1.0)), "CORE TEMPERATURE")
-
-        if stage.get("show_pellet_card"):
-            c_box = [125, 1240, 955, 1690]
-            draw.rounded_rectangle(c_box, radius=32, fill=(250, 246, 235, 238), outline=(40, 50, 60, 255), width=5)
-            draw.rounded_rectangle([235, 1390, 302, 1478], radius=12, fill=(125, 135, 145, 255), outline=(40, 45, 50, 255), width=4)
-            draw.ellipse([345, 1382, 405, 1438], fill=(235, 65, 55, 255), outline=(140, 30, 25, 255), width=3)
-            draw.rounded_rectangle([340, 1418, 410, 1478], radius=18, fill=(235, 65, 55, 255), outline=(140, 30, 25, 255), width=3)
-            draw.text((200, 1520), "1 FUEL PELLET", font=self.font_card, fill=(40, 45, 50, 255))
-            draw.text((515, 1395), "=", font=self.font_word, fill=(235, 165, 40, 255))
-            for cx_c, cy_c in [(690, 1455), (745, 1455), (800, 1455), (715, 1410), (770, 1410), (742, 1365)]:
-                draw.regular_polygon((cx_c, cy_c, 32), n_sides=6, fill=(55, 60, 65, 255), outline=(25, 30, 35, 255))
-            draw.text((645, 1520), "1 TON OF COAL", font=self.font_card, fill=(40, 45, 60, 255))
-
-        if stage.get("show_confetti"):
-            for c_x, c_y0, c_s, c_col in self.confetti:
-                cy_now = (c_y0 + prog * 1050) % 1920
-                cx_now = c_x + math.sin(prog * 15 + c_x) * 18
-                draw.rectangle([cx_now - c_s, cy_now - c_s * 1.6, cx_now + c_s, cy_now + c_s * 1.6], fill=(*c_col, 255))
-
-        if current_word:
-            w_text = current_word.upper()
-            bbox = draw.textbbox((0, 0), w_text, font=self.font_word)
-            tw = bbox[2] - bbox[0]
-            wx_pos = (1080 - tw) // 2
-            wy_pos = 340
-
-            for dx in (-5, -3, 0, 3, 5):
-                for dy in (-5, -3, 0, 3, 5):
-                    if dx != 0 or dy != 0:
-                        draw.text((wx_pos + dx, wy_pos + dy), w_text, font=self.font_word, fill=(25, 35, 45, 255))
-            draw.text((wx_pos, wy_pos), w_text, font=self.font_word, fill=(255, 255, 255, 255))
-
-        return img.convert("RGB")
-
-
-def pick_word_by_weighted_time(words, prog):
-    weights = [max(len(w), 2) + 1.5 for w in words]
-    total_w = sum(weights)
-    target = prog * total_w
-    acc = 0.0
-    for idx, w_val in enumerate(weights):
-        acc += w_val
-        if target <= acc:
-            return words[idx]
-    return words[-1]
-
-
-def build_stage_video_with_hud(stage_idx, stage, hud, out_stage_mp4):
-    audio_wav = f"stage_{stage_idx}.wav"
-    duration = build_segment_audio(stage_idx, stage, audio_wav)
-
-    img_jpg = f"nuclear_3d_{stage_idx}.jpg"
-    generate_3d_stage_image(stage_idx, stage["image_prompt"], img_jpg)
-
-    raw_ai_mp4 = f"raw_wan_{stage_idx}.mp4"
-    stretched_mp4 = f"stretched_{stage_idx}.mp4"
+    raw_ai_video = f"raw_ai_{index}.mp4"
+    base_video = f"base_{index}.mp4"
+    video_file = f"scene_{index}.mp4"
     fps = 30
-    total_frames = max(int(round(duration * fps)), 1)
+    total_frames = int(duration * fps) + 10
 
-    animated = animate_3d_stage_with_wan(stage_idx, img_jpg, stage["motion_prompt"], raw_ai_mp4)
-    if animated and os.path.exists(raw_ai_mp4):
+    ai_animated = animate_scene_smoothly(index, start_img, next_img, scene["motion_prompt"], raw_ai_video)
+
+    if ai_animated and os.path.exists(raw_ai_video):
         v_probe = subprocess.run([
             "ffprobe", "-v", "error", "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1", raw_ai_mp4
+            "-of", "default=noprint_wrappers=1:nokey=1", raw_ai_video
         ], capture_output=True, text=True, check=True)
-        raw_dur = max(float(v_probe.stdout.strip() or "2.5"), 1.0)
-        stretch = round((duration + 0.15) / raw_dur, 3)
+        raw_vid_dur = max(float(v_probe.stdout.strip() or "3.0"), 1.0)
+        stretch_factor = round((duration + 0.15) / raw_vid_dur, 3)
 
         subprocess.run([
             "ffmpeg", "-y", "-loglevel", "error",
-            "-i", raw_ai_mp4,
+            "-i", raw_ai_video,
             "-vf", (
-                f"setpts={stretch}*PTS,"
+                f"setpts={stretch_factor}*PTS,"
                 f"minterpolate=fps={fps}:mi_mode=blend,"
                 f"tpad=stop_mode=clone:stop_duration=2,"
                 f"scale=1220:2168:force_original_aspect_ratio=increase,crop=1220:2168,"
@@ -694,67 +596,59 @@ def build_stage_video_with_hud(stage_idx, stage, hud, out_stage_mp4):
                 f"cas=0.65,setsar=1,format=yuv420p"
             ),
             "-t", str(duration), "-r", str(fps),
-            "-c:v", "libx264", "-preset", "fast", "-crf", "15", "-an", stretched_mp4
+            "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
         ], check=True)
     else:
         subprocess.run([
             "ffmpeg", "-y", "-loglevel", "error",
-            "-loop", "1", "-i", img_jpg,
+            "-loop", "1", "-i", start_img,
             "-vf", (
                 f"scale=1440:2560:force_original_aspect_ratio=increase,crop=1440:2560,"
                 f"zoompan=z='min(zoom+0.0020,1.22)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                 f"d={total_frames}:s=1080x1920:fps={fps},cas=0.6,setsar=1,format=yuv420p"
             ),
             "-t", str(duration), "-r", str(fps),
-            "-c:v", "libx264", "-preset", "fast", "-crf", "15", "-an", stretched_mp4
+            "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
         ], check=True)
 
-    reader_proc = subprocess.Popen([
-        "ffmpeg", "-loglevel", "error",
-        "-i", stretched_mp4,
-        "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "1080x1920", "-r", str(fps), "-"
-    ], stdout=subprocess.PIPE)
+    clean_words = re.sub(r'["\'«»*():;,.?!—-]', '', narration).split()
+    phrases = [" ".join(clean_words[i:i + 3]) for i in range(0, len(clean_words), 3)] or ["..."]
+    step_dur = duration / max(len(phrases), 1)
 
-    writer_proc = subprocess.Popen([
+    inputs_cmd = ["-i", base_video, "-i", audio_file]
+    filter_parts = []
+    last_stream = "[0:v]"
+    for p_idx, phrase in enumerate(phrases):
+        png_file = f"sub_{index}_{p_idx}.png"
+        render_english_subtitle_png(phrase, png_file)
+        inputs_cmd.extend(["-loop", "1", "-t", str(duration), "-i", png_file])
+        start_t = round(p_idx * step_dur, 2)
+        end_t = round((p_idx + 1) * step_dur, 2)
+        next_stream = f"[v{p_idx}]"
+        inp_idx = p_idx + 2
+        filter_parts.append(
+            f"{last_stream}[{inp_idx}:v]overlay=0:0:shortest=1:enable='between(t,{start_t},{end_t})'{next_stream}"
+        )
+        last_stream = next_stream
+
+    filter_parts.append(f"{last_stream}format=yuv420p[vout]")
+
+    subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "rawvideo", "-vcodec", "rawvideo",
-        "-s", "1080x1920", "-pix_fmt", "rgb24", "-r", str(fps),
-        "-i", "-",
-        "-i", audio_wav,
-        "-map", "0:v", "-map", "1:a",
+        *inputs_cmd,
+        "-filter_complex", ";".join(filter_parts),
+        "-map", "[vout]", "-map", "1:a",
         "-t", str(duration),
-        "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-pix_fmt", "yuv420p",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "16",
         "-c:a", "aac", "-ar", "44100", "-ac", "2",
-        out_stage_mp4
-    ], stdin=subprocess.PIPE)
-
-    frame_bytes_len = 1080 * 1920 * 3
-    words = re.sub(r'[,.?!—-]', '', stage["narration"]).split() or [""]
-    last_valid_img = Image.open(img_jpg).convert("RGB").resize((1080, 1920))
-
-    for f_i in range(total_frames):
-        raw_buf = reader_proc.stdout.read(frame_bytes_len)
-        if len(raw_buf) == frame_bytes_len:
-            base_frame = Image.frombytes("RGB", (1080, 1920), raw_buf)
-            last_valid_img = base_frame
-        else:
-            base_frame = last_valid_img
-
-        prog = f_i / max(total_frames - 1, 1)
-        curr_word = pick_word_by_weighted_time(words, prog)
-        composited = hud.render_hud_on_frame(base_frame, stage, prog, curr_word)
-        writer_proc.stdin.write(composited.tobytes())
-
-    reader_proc.stdout.close()
-    writer_proc.stdin.close()
-    reader_proc.wait()
-    writer_proc.wait()
-    return out_stage_mp4, duration
+        video_file
+    ], check=True)
+    return video_file, duration
 
 
 def merge_scenes_with_strong_transitions(scene_videos, scene_durations, out_merged_video):
-    trans_duration = 0.25
-    transition_types = ["smoothup", "smoothleft", "fade", "smoothdown", "circleopen", "smoothright"]
+    trans_duration = 0.24
+    transition_types = ["fade", "smoothleft", "smoothright", "smoothup"]
 
     inputs_cmd = []
     for v in scene_videos:
@@ -813,14 +707,14 @@ def upload_to_youtube(video_path, title, refresh_token):
     )
     youtube = build("youtube", "v3", credentials=creds)
 
-    clean_title = f"{title[:65]} #nuclear #science #shorts"[:95]
+    clean_title = f"{title[:68]} #history #shorts"[:95]
 
     body = {
         "snippet": {
             "title": clean_title,
-            "description": f"{title}\n\n3D Cutaway Animated Explainer: How a Nuclear Power Plant Works.\n#engineering #science #howitworks #nuclearpower #shorts",
-            "tags": ["nuclear power plant", "how it works", "engineering", "science", "3d animation", "shorts"],
-            "categoryId": "28"
+            "description": f"{title}\n\nThe true story of the 1859 Pig War between the United States and the British Empire.\n#history #weirdhistory #militaryhistory #facts #shorts",
+            "tags": ["pig war", "history", "weird history", "1859", "us history", "british empire", "shorts"],
+            "categoryId": "27"
         },
         "status": {
             "privacyStatus": "public",
@@ -860,7 +754,7 @@ def upload_to_facebook_reels(video_path, title, page_id):
             "upload_phase": "finish",
             "video_id": video_id,
             "video_state": "PUBLISHED",
-            "description": f"{title} ⚛️⚡\n\n#engineering #science #howitworks #reels",
+            "description": f"{title} 🐖🔥\n\n#history #weirdhistory #facts #reels",
             "access_token": META_ACCESS_TOKEN
         },
         timeout=60
@@ -869,24 +763,28 @@ def upload_to_facebook_reels(video_path, title, page_id):
 
 
 def assemble_and_publish():
-    title = "How a Nuclear Power Plant Works From the Inside!"
-    font_path = ensure_english_font()
-    hud = ProgrammaticHUDOverlay(font_path)
+    title = "How Two Nations Nearly Started War Over One Stolen Pig"
+    uploaded_map = discover_uploaded_images_map()
+    print(f"📸 Uploaded Gemini images found: {len(uploaded_map)} ({sorted(uploaded_map.keys())})", flush=True)
 
-    print(f"🚀 Total HF Accounts Ready for 8K 3D Rendering & Animation: {len(HF_TOKENS)}", flush=True)
-    stage_videos = []
-    stage_durations = []
+    # تجهيز جميع الصور الـ 12 أولاً حتى نتمكن من ربط كل صورة بالتي تليها (Start -> End Frame)
+    all_scene_imgs = []
+    for idx, scene in enumerate(PIG_WAR_SCENES):
+        img_file = f"scene_img_{idx}.jpg"
+        obtain_scene_image(idx, scene["image_prompt"], img_file, uploaded_map)
+        all_scene_imgs.append(img_file)
 
-    for idx, stage in enumerate(NUCLEAR_PLANT_STAGES):
-        print(f"--- Building 3D Stage {idx + 1}/12 + Programmatic HUD ---", flush=True)
-        out_mp4 = f"stage_final_{idx}.mp4"
-        clip, dur = build_stage_video_with_hud(idx, stage, hud, out_mp4)
-        stage_videos.append(clip)
-        stage_durations.append(dur)
+    scene_videos = []
+    scene_durations = []
+    for idx, scene in enumerate(PIG_WAR_SCENES):
+        print(f"--- Animating & Syncing Scene {idx + 1}/12 ---", flush=True)
+        clip, dur = build_scene_clip(idx, scene, all_scene_imgs)
+        scene_videos.append(clip)
+        scene_durations.append(dur)
 
     merged_video = "merged_short.mp4"
     final_video = "final_short.mp4"
-    merge_scenes_with_strong_transitions(stage_videos, stage_durations, merged_video)
+    merge_scenes_with_strong_transitions(scene_videos, scene_durations, merged_video)
 
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
