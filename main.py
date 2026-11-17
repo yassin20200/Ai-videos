@@ -14,9 +14,11 @@ from googleapiclient.http import MediaFileUpload
 from gradio_client import Client, handle_file
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 
-print("🚀 Starting Smooth English Historical Shorts Studio (The 1859 Pig War)...", flush=True)
+print("🚀 Starting Long-Form 16:9 Documentary Studio (Target: 04:35 / 275.0s Exact)...", flush=True)
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+TARGET_TOTAL_VIDEO_SECONDS = 275.0  # 4 minutes and 35 seconds exact
+VIDEO_W, VIDEO_H = 1920, 1080       # Horizontal 16:9 Long-Form YouTube format
+
 ENGLISH_VOICE = os.getenv("ENGLISH_VOICE", "en-US-AndrewMultilingualNeural").strip() or "en-US-AndrewMultilingualNeural"
 
 BUILTIN_HF_KEYS = [
@@ -49,114 +51,208 @@ YT_CLIENT_ID = os.getenv("YT_CLIENT_ID", "").strip()
 YT_CLIENT_SECRET = os.getenv("YT_CLIENT_SECRET", "").strip()
 YT_REFRESH_TOKENS = [t.strip() for t in os.getenv("YT_REFRESH_TOKENS", "").split(",") if t.strip()]
 
-FB_PAGE_IDS = [p.strip() for p in os.getenv("FB_PAGE_IDS", "").split(",") if p.strip()]
-META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "").strip()
-
-GRAPH_API = "https://graph.facebook.com/v21.0"
 FONT_BOLD_PATH = "Montserrat-ExtraBold.ttf"
-MASTER_SEED = 185901
+MASTER_SEED = 196206
 
 os.environ.pop("HF_TOKEN", None)
 EXHAUSTED_ZEROGPU_TOKENS = set()
 
 SFX_LIBRARY = {
-    "drums": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.30),
-    "waves": ("https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg", 0.22),
-    "pig": ("https://actions.google.com/sounds/v1/cartoon/pop.ogg", 0.28),
-    "shot": ("https://actions.google.com/sounds/v1/impacts/crash.ogg", 0.32),
-    "whoosh": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.26),
-    "cheer": ("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg", 0.26)
+    "waves": ("https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg", 0.24),
+    "alarm": ("https://actions.google.com/sounds/v1/alarms/beep_short.ogg", 0.25),
+    "scrape": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.24),
+    "thump": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.28),
+    "wind": ("https://actions.google.com/sounds/v1/weather/wind_blowing.ogg", 0.24),
+    "water": ("https://actions.google.com/sounds/v1/water/water_splashing.ogg", 0.25)
 }
 
 STYLE_PREFIX = (
-    "Masterpiece stylized 3D cinematic historical animation render, Unreal Engine 5 & Pixar-grade rich textures, "
-    "dramatic natural lighting, expressive 3D characters, 8k vertical 9:16, no text, no watermarks. "
+    "Masterpiece stylized 3D cinematic historical thriller render, Unreal Engine 5 studio lighting, "
+    "rich atmospheric textures, dramatic shadows, ultra-crisp 8k horizontal 16:9 widescreen, no text, no watermarks. "
 )
 
-PIG_WAR_SCENES = [
+# 15 فصلاً متكاملاً لقصة الهروب من ألكاتراز 1962 (مصممة لتغطية 4 دقائق و35 ثانية بتشويق مستمر)
+ALCATRAZ_SCENES = [
     {
         "id": 0,
-        "sfx": "drums",
-        "narration": "In 1859, the United States and the British Empire nearly went to full-scale war, over a single pig eating a potato.",
-        "image_prompt": f"{STYLE_PREFIX}1859 American soldiers in blue uniforms and British soldiers in red coats aiming cannons at each other on a green island with a black pig eating a potato in the middle.",
-        "motion_prompt": "Smooth 3D cinematic camera push-in toward the black pig munching a potato between the two aiming armies, dramatic wind moving the grass"
+        "sfx": "waves",
+        "narration": (
+            "In the middle of the freezing, shark-infested waters of San Francisco Bay sits Alcatraz Island, "
+            "a fortress built on jagged rock that the United States government promised was one hundred percent escape-proof. "
+            "Yet in June of nineteen sixty-two, three men pulled off the most brilliant prison break in human history, "
+            "using nothing but stolen spoons, raincoats, and painted dummy heads."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Alcatraz Island prison at night in 1962 sitting on a jagged rock in stormy ocean waves while a yellow searchlight sweeps from the guard tower.",
+        "motion_prompt": "Cinematic 3D widescreen animation, stormy ocean waves crash against Alcatraz island at night as the yellow searchlight beam sweeps through the mist"
     },
     {
         "id": 1,
-        "sfx": "waves",
-        "narration": "It all started on San Juan Island, a tiny piece of land claimed by both countries, where American settlers and British workers lived side by side.",
-        "image_prompt": f"{STYLE_PREFIX}Wide 3D shot of San Juan Island in 1859 with an American wooden cabin and US flag on one side and a British trading post with a Union Jack flag on the other.",
-        "motion_prompt": "Smooth 3D aerial camera glide across the green island showing the American and British cabins with flags waving in the breeze"
+        "sfx": "alarm",
+        "narration": (
+            "On the morning of June twelfth, nineteen sixty-two, the loud metallic clanging of the morning bell echoed through Cellblock B. "
+            "Every prisoner stood up for the routine headcount, except for three men who appeared to be fast asleep under their blankets. "
+            "When a guard reached through the iron bars and shoved the pillow of inmate Frank Morris, "
+            "the prisoner's head rolled right off the bed and crashed onto the concrete floor."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Inside a dim 1962 Alcatraz prison cell at dawn, a guard reaches through the bars and a painted dummy head with real hair rolls off the pillow onto the floor.",
+        "motion_prompt": "Suspenseful 3D animation, the uniformed prison guard steps back in shock as the painted dummy head lies on the concrete cell floor"
     },
     {
         "id": 2,
-        "sfx": "pig",
-        "narration": "One morning, an American farmer named Lyman Cutlar walked out to his garden and found a giant black pig digging up his prized potatoes.",
-        "image_prompt": f"{STYLE_PREFIX}An angry bearded 1859 American farmer in suspenders standing on his cabin porch staring at a large black pig digging up potatoes in his garden.",
-        "motion_prompt": "3D character animation, the bearded farmer glares in disbelief as the black pig happily digs and munches potatoes in the garden"
+        "sfx": "thump",
+        "narration": (
+            "The mastermind behind this audacious plot was Frank Lee Morris, a career criminal with a genius-level IQ of one hundred and thirty-three "
+            "who had already escaped from multiple prisons across the country. "
+            "From the very first hour Morris arrived on Alcatraz in January nineteen sixty, he didn't look for ways to survive his sentence; "
+            "he immediately began searching for a structural weakness in the fortress."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Frank Morris kneeling beneath a rusty metal sink inside his concrete prison cell, shining a tiny match light at a small metal air vent grille near the floor.",
+        "motion_prompt": "3D cinematic animation, the warm match flame flickers in the dim prison cell as the prisoner examines the metal air vent under the sink"
     },
     {
         "id": 3,
-        "sfx": "shot",
-        "narration": "Furious because this wasn't the first time, Cutlar grabbed his rifle and shot the pig dead on the spot.",
-        "image_prompt": f"{STYLE_PREFIX}The bearded 1859 American farmer in suspenders aiming an old musket rifle with a puff of white smoke by the wooden garden fence as birds fly up from the trees.",
-        "motion_prompt": "3D cinematic animation, white smoke billows from the musket barrel as startled birds fly up from the pine trees"
+        "sfx": "scrape",
+        "narration": (
+            "Morris noticed a tiny detail that the prison architects had overlooked for decades. "
+            "Constant exposure to the damp, salty ocean air blowing in from San Francisco Bay had slowly eaten away at the concrete walls. "
+            "Down beneath his cell sink sat a small metal air vent, just four inches high and eight inches wide, "
+            "surrounded by crumbling, salt-damaged mortar that could be chipped away."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Macro close-up of a prisoner's hand holding a stolen metal dining spoon scraping away crumbling grey concrete around a small iron ventilation grille.",
+        "motion_prompt": "Close-up 3D animation, the metal spoon scrapes against the crumbling concrete wall as dust particles fall slowly to the floor"
     },
     {
         "id": 4,
-        "sfx": "whoosh",
-        "narration": "There was just one problem: the pig belonged to an Irishman working for the British, who demanded one hundred dollars and threatened to have Cutlar arrested.",
-        "image_prompt": f"{STYLE_PREFIX}A furious British-Irish official in an 1859 tweed coat and top hat shouting and pointing his finger in the face of the bearded American farmer.",
-        "motion_prompt": "3D expressive character animation, the official in the top hat gestures angrily while arguing with the stubborn bearded farmer"
+        "sfx": "wind",
+        "narration": (
+            "Knowing a job this complex required a team, Morris quietly recruited three inmates occupying adjacent cells: "
+            "brothers John and Clarence Anglin, who were expert swimmers, and Allen West, who worked on the prison maintenance crew. "
+            "Every afternoon in the windy prison yard, the four men stood together whispering blueprints, "
+            "assigning tasks, and smuggling tiny tools back into their cells."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Four prisoners in 1962 denim jackets huddled together in a corner of the misty Alcatraz prison yard whispering while armed guards watch from a high walkway.",
+        "motion_prompt": "3D cinematic animation, mist drifts across the prison yard as the four inmates whisper together cautiously while guards patrol above"
     },
     {
         "id": 5,
-        "sfx": "drums",
-        "narration": "Terrified of British arrest, the American settlers called the U.S. Army, and Captain George Pickett landed on the island with sixty-six soldiers and cannons.",
-        "image_prompt": f"{STYLE_PREFIX}1859 US Army soldiers in dark blue uniforms led by Captain George Pickett marching onto the rocky island beach pushing heavy brass cannons under an American flag.",
-        "motion_prompt": "Epic 3D historical animation, American soldiers in blue uniforms march forward pushing brass cannons up the grassy beach as the flag waves"
+        "sfx": "scrape",
+        "narration": (
+            "Digging through solid concrete with stolen dining spoons and discarded saw blades was agonizingly slow, "
+            "and a single suspicious sound would send them straight to solitary confinement. "
+            "So the men timed their heavy digging to coincide with the daily prison music hour. "
+            "While Frank Morris stood at the front of his cell loudly playing an accordion, "
+            "his partners behind the walls used a makeshift drill built from a stolen vacuum cleaner motor."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Inside the cellblock, a prisoner plays an accordion by the cell bars while behind him in the shadows another prisoner uses a makeshift drill on the wall.",
+        "motion_prompt": "3D dramatic animation, the prisoner plays the accordion by the bars while sparks and dust fly from the hidden wall hole in the shadows"
     },
     {
         "id": 6,
-        "sfx": "waves",
-        "narration": "The British were outraged, so they sent five massive warships carrying seventy cannons and over two thousand Royal Marines to surround the beach.",
-        "image_prompt": f"{STYLE_PREFIX}Five massive 1859 British Royal Navy wooden warships with open cannon ports and British flags anchored in the bay facing the tiny American camp on the hill.",
-        "motion_prompt": "Epic 3D cinematic camera pan across the five massive British warships floating on the rippling ocean bay facing the island"
+        "sfx": "thump",
+        "narration": (
+            "To hide the growing gaping holes in their walls during surprise daytime cell inspections, "
+            "the prisoners crafted fake ventilation grilles out of stiff cardboard painted with dark grey soap and dust. "
+            "After nearly a full year of relentless nighttime scraping, the men finally broke through into an unguarded, pitch-black utility corridor "
+            "running directly behind the cellblock, filled with massive vertical water and sewage pipes."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Frank Morris squeezing through the jagged hole behind his cell sink into a dark secret utility corridor filled with huge vertical rusty iron pipes.",
+        "motion_prompt": "3D suspense animation, the prisoner crawls into the narrow dark pipe corridor as dust motes float in a dim shaft of light"
     },
     {
         "id": 7,
-        "sfx": "drums",
-        "narration": "For weeks, both armies stood nose to nose with loaded cannons, trading insults every day to trick the other side into firing the first shot.",
-        "image_prompt": f"{STYLE_PREFIX}Close-up 3D standoff between 1859 American soldiers in blue and British Royal Marines in red coats standing nose-to-nose beside loaded brass cannons.",
-        "motion_prompt": "Tense 3D cinematic camera movement between the glaring American and British soldiers standing beside loaded cannons"
+        "sfx": "wind",
+        "narration": (
+            "At night, after the guards locked down the tiers, Morris and the Anglin brothers climbed thirty feet up those rusty iron pipes "
+            "to the flat, empty top of the cellblock roof, thirty feet above the floor. "
+            "Up there in the dark shadows, hidden behind hanging blankets, they established a secret midnight workshop. "
+            "Over the course of months, they collected over fifty rubber raincoats stolen from prison laundry bins."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Three prisoners crouching under hanging blankets on top of the dark cellblock roof, stitching together fifty yellow-and-black rubber raincoats into a raft.",
+        "motion_prompt": "3D cinematic animation, the three prisoners work under a dim hanging light stitching yellow rubber raincoats into a large raft"
     },
     {
         "id": 8,
-        "sfx": "shot",
-        "narration": "When the British Governor ordered his Admiral to attack the Americans, the stunned Admiral refused, shouting: I will not start a war between two great nations over a squabble about a pig!",
-        "image_prompt": f"{STYLE_PREFIX}An older British Rear Admiral in a navy blue coat with gold epaulets slamming his hand on a map table aboard his warship, refusing an order to attack.",
-        "motion_prompt": "3D dramatic character animation, the British Admiral shakes his head firmly over the map table aboard the wooden warship"
+        "sfx": "scrape",
+        "narration": (
+            "Getting off the prison rock was only half the battle; swimming over a mile through forty-eight-degree water with strong currents was suicide. "
+            "Using sewing needles and heavy thread, the inmates stitched the fifty raincoats into a fourteen-foot-long inflatable rubber raft. "
+            "Then, using a brilliant piece of prison engineering, they pressed the rubber seams against scalding-hot steam pipes in the corridor "
+            "to melt and vulcanize the rubber until it was completely airtight."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Close-up shot in the secret corridor: prisoners pressing the seams of the yellow rubber raincoat raft against a hot white steam pipe to seal it airtight.",
+        "motion_prompt": "3D engineering animation, white steam rises gently as the rubber raft seams are pressed against the hot metal pipe"
     },
     {
         "id": 9,
-        "sfx": "whoosh",
-        "narration": "Once news finally reached Washington and London, both governments were horrified and rushed diplomats to the island to calm everyone down.",
-        "image_prompt": f"{STYLE_PREFIX}An elderly decorated American General stepping off a steamship onto the island pier, shaking hands with the British Admiral as soldiers lower their rifles.",
-        "motion_prompt": "3D cinematic animation, the American General and British Admiral shake hands warmly on the pier as soldiers relax in the background"
+        "sfx": "thump",
+        "narration": (
+            "To inflate their raft quickly on the beach without running out of breath, they modified a broken wooden concertina musical instrument "
+            "to work as a high-volume air bellows, and carved sturdy paddles out of scrap plywood. "
+            "Meanwhile, to buy themselves nine crucial hours of head start before the morning count, "
+            "they sculpted remarkably lifelike dummy heads out of soap, toilet paper, and concrete dust, topped with real hair from the barbershop."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Close-up on a dim prison table showing three lifelike sculpted dummy heads made of soap and paper, painted with flesh tones and real human hair.",
+        "motion_prompt": "Slow 3D camera push-in across the three eerie lifelike painted dummy heads sitting on the wooden prison table"
     },
     {
         "id": 10,
-        "sfx": "waves",
-        "narration": "The two armies peacefully shared the island for twelve years, until an international judge finally awarded San Juan Island to the United States.",
-        "image_prompt": f"{STYLE_PREFIX}1859 American soldiers in blue and British soldiers in red coats sitting peacefully together around a campfire on the island clinking mugs under both flags.",
-        "motion_prompt": "Warm 3D animation, glowing campfire sparks rise as American and British soldiers laugh and clink mugs together peacefully"
+        "sfx": "alarm",
+        "narration": (
+            "On the night of June eleventh, nineteen sixty-two, everything was finally ready. "
+            "Right after lights out at nine-thirty PM, the men placed the dummy heads onto their pillows and stuffed rolled-up clothes under the blankets. "
+            "Morris and the two Anglin brothers crawled into the dark corridor, but disaster struck Allen West: "
+            "the quick-drying cement he used to hold his fake grille had hardened too much, trapping him inside his cell as the others moved on."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Inside the dark prison cell at night, a lifelike dummy head rests under the blanket on the bed while Frank Morris slips through the hole under the sink.",
+        "motion_prompt": "Tense 3D night animation, moonlight shines through the cell bars onto the dummy head in bed as the prisoner vanishes into the wall hole"
     },
     {
         "id": 11,
-        "sfx": "cheer",
-        "narration": "And that is how the Pig War of 1859 ended in the history books, with zero human casualties, and one very unfortunate pig.",
-        "image_prompt": f"{STYLE_PREFIX}A proud bronze statue of the chubby pig holding a potato on a stone pedestal in the sunny green island meadow with an American flag waving behind it.",
-        "motion_prompt": "Smooth 3D camera pull-back revealing the bronze pig statue gleaming in the sunlight as the flag waves gently against the blue sky"
+        "sfx": "wind",
+        "narration": (
+            "Climbing up the vertical ventilation shaft in the darkness, Morris and the Anglin brothers pried open the heavy iron fanilator on the roof "
+            "using a homemade crowbar, popping the rivets with a loud metallic snap that somehow went unnoticed by the guards. "
+            "Clutching their heavy bundle of raincoats and wooden paddles, they crept across the high cellhouse roof, "
+            "dropping flat into the shadows every time the blinding guard tower searchlight swept past."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Three prisoners crouching low on the high wind-swept roof of Alcatraz at night carrying their folded raft as a bright yellow searchlight sweeps past.",
+        "motion_prompt": "3D thriller animation, the golden searchlight beam sweeps across the wet rooftop as the three prisoners crouch in the dark shadows"
+    },
+    {
+        "id": 12,
+        "sfx": "waves",
+        "narration": (
+            "Sliding fifty feet down a cast-iron kitchen exhaust pipe on the north side of the building, "
+            "the three men climbed over two twelve-foot barbed-wire fences and reached the dark, rocky shoreline on the northeast corner of the island. "
+            "Working in total silence in the blind spot of the searchlight, they pumped the wooden concertina bellows, "
+            "inflating their fourteen-foot raincoat raft as icy waves crashed against their ankles."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}At the rocky water's edge of Alcatraz at night, the three prisoners frantically inflate their yellow raincoat raft as dark ocean waves crash around them.",
+        "motion_prompt": "3D action animation, dark ocean waves splash against the rocks as the three men pump the yellow raft at the water's edge"
+    },
+    {
+        "id": 13,
+        "sfx": "water",
+        "narration": (
+            "Around ten PM, Frank Morris, John Anglin, and Clarence Anglin pushed off from the rocks into the freezing black waters of San Francisco Bay. "
+            "Using their homemade plywood paddles, they vanished into the thick, swirling silver fog heading north toward Angel Island, "
+            "two miles away. By the time Allen West finally chipped his cell vent open and reached the roof hours later, "
+            "his partners were long gone into the night."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}The three men paddling their makeshift raincoat raft into thick silver fog across the dark choppy waters of San Francisco Bay toward distant city lights.",
+        "motion_prompt": "Epic 3D atmospheric animation, the raincoat raft glides into the swirling silver fog over dark rippling waves toward the distant horizon"
+    },
+    {
+        "id": 14,
+        "sfx": "waves",
+        "narration": (
+            "The next morning, the largest manhunt in FBI history was launched across the bay. "
+            "Searchers found a single wooden paddle floating near Angel Island and a waterproof plastic bag containing the Anglin brothers' family photos, "
+            "but no bodies ever washed ashore. Nine months later, Alcatraz was shut down forever, "
+            "and to this day, the mystery remains unsolved: did they drown in the bay, or did three men with spoons beat the impossible?"
+        ),
+        "image_prompt": f"{STYLE_PREFIX}At dawn on the foggy shore of Angel Island, two 1962 FBI agents in trench coats hold a washed-up wooden paddle, staring out at the empty misty bay.",
+        "motion_prompt": "Cinematic 3D closing shot, morning mist drifts over the calm bay waters as the two FBI agents stand on the rocky shore"
     }
 ]
 
@@ -245,11 +341,12 @@ def ensure_english_font():
 
 
 def discover_uploaded_images_map():
+    """فحص فولدر images أولاً ثم scenes ثم المجلد الرئيسي"""
     valid_exts = (".jpg", ".jpeg", ".png", ".webp", ".jfif")
     ignore_prefixes = ("scene_", "stage_", "temp_", "sub_", "base_", "raw_", "stretched_", "nuclear_")
     raw_num_map = {}
 
-    for root_dir in [".", "images", "scenes"]:
+    for root_dir in ["images", "scenes", "."]:
         if not os.path.exists(root_dir):
             continue
         for fname in os.listdir(root_dir):
@@ -270,8 +367,25 @@ def discover_uploaded_images_map():
     return raw_num_map
 
 
-def save_clean_image(src_path, dst_file):
-    img = Image.open(src_path).convert("RGB").resize((1080, 1920), Image.Resampling.LANCZOS)
+def save_clean_widescreen_image(src_path, dst_file):
+    """حفظ الصورة بمقاس الفيديو الطويل العرضي 16:9 (1920x1080) مع الحفاظ على التناسب"""
+    img = Image.open(src_path).convert("RGB")
+    src_w, src_h = img.size
+    target_ratio = VIDEO_W / VIDEO_H
+    src_ratio = src_w / src_h
+
+    if abs(src_ratio - target_ratio) > 0.25:
+        # إذا كانت الصورة طولية، نصنع خلفية ضبابية سينمائية 1920x1080 ونضع الصورة في المنتصف
+        bg = img.resize((VIDEO_W, VIDEO_H), Image.Resampling.LANCZOS).filter(ImageFilter.GaussianBlur(28))
+        bg = ImageEnhance.Brightness(bg).enhance(0.55)
+        new_h = VIDEO_H
+        new_w = int(src_w * (new_h / src_h))
+        fg = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        bg.paste(fg, ((VIDEO_W - new_w) // 2, 0))
+        img = bg
+    else:
+        img = img.resize((VIDEO_W, VIDEO_H), Image.Resampling.LANCZOS)
+
     img = ImageEnhance.Contrast(img).enhance(1.04)
     img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=110, threshold=3))
     img.save(dst_file, "JPEG", quality=98)
@@ -286,7 +400,7 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
     scene_num = index + 1
     if scene_num in uploaded_map:
         src = uploaded_map[scene_num]
-        save_clean_image(src, dst_jpg)
+        save_clean_widescreen_image(src, dst_jpg)
         print(f"📸 Using your uploaded Gemini image for Scene {scene_num}: ({src})!", flush=True)
         return
 
@@ -303,8 +417,8 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
                         prompt=image_prompt,
                         seed=MASTER_SEED,
                         randomize_seed=False,
-                        width=1024,
-                        height=1792,
+                        width=1792,
+                        height=1024,
                         guidance_scale=3.5,
                         num_inference_steps=steps,
                         api_name="/infer"
@@ -314,8 +428,8 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
                         prompt=image_prompt,
                         seed=MASTER_SEED,
                         randomize_seed=False,
-                        width=1024,
-                        height=1792,
+                        width=1792,
+                        height=1024,
                         num_inference_steps=steps,
                         api_name="/infer"
                     )
@@ -323,8 +437,8 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
                 if isinstance(img_path, dict) and "path" in img_path:
                     img_path = img_path["path"]
                 if isinstance(img_path, str) and os.path.exists(img_path):
-                    save_clean_image(img_path, dst_jpg)
-                    print(f"✨ Generated fallback image for Scene {scene_num} via {space_name}!", flush=True)
+                    save_clean_widescreen_image(img_path, dst_jpg)
+                    print(f"✨ Generated 16:9 image for Scene {scene_num} via {space_name}!", flush=True)
                     return
             except Exception as e:
                 if is_quota_error(e):
@@ -354,18 +468,12 @@ def extract_video_path(result):
 
 
 def animate_scene_smoothly(index, start_img, next_img, motion_prompt, out_raw_video):
-    """
-    الطريقة السلسة المتفق عليها:
-    1. تحاول أولاً ربط صورة البداية بصورة النهاية عبر (multimodalart/wan-2-2-first-last-frame) لعمل انتقال متصل.
-    2. أو تحرك اللقطة عبر (zerogpu-aoti/wan2-2-fp8da-aoti-faster) بانسيابية تامة.
-    """
-    full_motion = f"{motion_prompt}, smooth continuous 3D cinematic animation, high quality, keep characters consistent"
+    full_motion = f"{motion_prompt}, smooth continuous 3D cinematic documentary animation, high quality, keep characters consistent"
     neg_prompt = "morphing, deforming, melting, warping, blurry, low quality, worst quality, text, watermark, nsfw"
     all_pool = [None] + HF_TOKENS
 
-    # 1. محاولة الربط الانتقالي First-Frame to Last-Frame إن توفرت الصورة التالية
     if next_img and os.path.exists(next_img):
-        for pool_idx, tok in enumerate(all_pool[:5]):
+        for pool_idx, tok in enumerate(all_pool[:4]):
             tok_key = "FLF_IP" if tok is None else f"FLF_{tok[:12]}"
             if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
                 continue
@@ -396,7 +504,6 @@ def animate_scene_smoothly(index, start_img, next_img, motion_prompt, out_raw_vi
                     continue
                 break
 
-    # 2. التحريك السينمائي المستمر عبر Wan 2.2 Faster
     for pool_idx, tok in enumerate(all_pool):
         tok_key = "SERVER_IP" if tok is None else f"TOK_{tok[:12]}"
         if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
@@ -411,7 +518,7 @@ def animate_scene_smoothly(index, start_img, next_img, motion_prompt, out_raw_vi
                 prompt=full_motion,
                 steps=5,
                 negative_prompt=neg_prompt,
-                duration_seconds=3.0,
+                duration_seconds=3.2,
                 guidance_scale=1.1,
                 guidance_scale_2=1.1,
                 seed=MASTER_SEED + index,
@@ -430,7 +537,7 @@ def animate_scene_smoothly(index, start_img, next_img, motion_prompt, out_raw_vi
             try:
                 ps = PinnedSpace(wan_space, token=tok)
                 up_img = ps.upload(start_img)
-                out = ps.call("/generate_video", [up_img, full_motion, 5, neg_prompt, 3.0, 1.1, 1.1, MASTER_SEED + index, False])
+                out = ps.call("/generate_video", [up_img, full_motion, 5, neg_prompt, 3.2, 1.1, 1.1, MASTER_SEED + index, False])
                 ps.download_video(out, out_raw_video)
                 print(f"🎉 Scene {index + 1} animated via {wan_space} Pinned ({label})!", flush=True)
                 return True
@@ -442,21 +549,18 @@ def animate_scene_smoothly(index, start_img, next_img, motion_prompt, out_raw_vi
     return False
 
 
-def build_segment_audio(seg_idx, scene, out_wav):
+def generate_raw_voice_for_scene(seg_idx, scene):
     text = scene["narration"]
-    sfx_key = scene["sfx"]
-
     raw_mp3 = f"seg_raw_{seg_idx}.mp3"
     trimmed_voice = f"seg_trim_{seg_idx}.wav"
-    sfx_ogg = f"seg_sfx_{seg_idx}.ogg"
 
     voice_ok = False
     for v_name in [ENGLISH_VOICE, "en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural", "en-US-ChristopherNeural"]:
         try:
             subprocess.run([
-                "edge-tts", "--voice", v_name, "--rate=+5%",
+                "edge-tts", "--voice", v_name, "--rate=-4%",
                 "--text", text, "--write-media", raw_mp3
-            ], check=True, timeout=25, stderr=subprocess.DEVNULL)
+            ], check=True, timeout=30, stderr=subprocess.DEVNULL)
             if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
                 voice_ok = True
                 break
@@ -469,7 +573,7 @@ def build_segment_audio(seg_idx, scene, out_wav):
         with open(raw_mp3, "wb") as f:
             f.write(r.content)
 
-    warm_eq = "highpass=f=75,equalizer=f=180:width_type=o:width=1.5:g=2.5,equalizer=f=3600:width_type=o:width=2.0:g=1.8"
+    warm_eq = "highpass=f=75,equalizer=f=180:width_type=o:width=1.5:g=2.6,equalizer=f=3600:width_type=o:width=2.0:g=1.8"
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
         "-i", raw_mp3,
@@ -485,10 +589,26 @@ def build_segment_audio(seg_idx, scene, out_wav):
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", trimmed_voice
     ], capture_output=True, text=True, check=True)
-    v_dur = float(probe.stdout.strip() or "4.5")
-    final_dur = round(v_dur + 0.18, 2)
+    v_dur = float(probe.stdout.strip() or "16.0")
+    return trimmed_voice, v_dur
 
-    sfx_url, sfx_vol = SFX_LIBRARY.get(sfx_key, SFX_LIBRARY["whoosh"])
+
+def finalize_scene_audio_exact(seg_idx, scene, trimmed_voice, raw_v_dur, exact_target_dur, out_wav):
+    """
+    ضبط طول الصوت والمؤثرات الصوتية لكل مشهد ليطابق المدة المحسوبة بالمللي ثانية
+    بحيث يكون إجمالي الفيديو 275.00 ثانية (4 دقائق و35 ثانية بالضبط)!
+    """
+    sfx_key = scene["sfx"]
+    sfx_ogg = f"seg_sfx_{seg_idx}.ogg"
+    sfx_url, sfx_vol = SFX_LIBRARY.get(sfx_key, SFX_LIBRARY["waves"])
+
+    # إذا كان صوت المشهد أطول من المدة المخصصة له، نسرعه بنسبة طفيفة جداً، وإذا كان أقصر نترك وقفة درامية طبيعية
+    if raw_v_dur > exact_target_dur - 0.35:
+        tempo = min(max(raw_v_dur / (exact_target_dur - 0.35), 0.90), 1.25)
+        voice_filter = f"atempo={round(tempo, 4)},adelay=180|180,volume=1.35"
+    else:
+        voice_filter = "adelay=250|250,volume=1.35"
+
     try:
         r = requests.get(sfx_url, timeout=15)
         if r.ok and len(r.content) > 1000:
@@ -496,49 +616,48 @@ def build_segment_audio(seg_idx, scene, out_wav):
                 f.write(r.content)
             subprocess.run([
                 "ffmpeg", "-y", "-loglevel", "error",
-                "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={final_dur}",
+                "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={exact_target_dur}",
                 "-i", sfx_ogg,
                 "-i", trimmed_voice,
                 "-filter_complex",
-                f"[1:a]atrim=0:{min(final_dur, 2.0)},afade=t=in:d=0.05,afade=t=out:st={max(min(final_dur, 2.0) - 0.35, 0.1)}:d=0.35,volume={sfx_vol}[s];"
-                f"[2:a]adelay=40|40,volume=1.35[v];"
+                f"[1:a]atrim=0:{min(exact_target_dur, 3.0)},afade=t=in:d=0.1,afade=t=out:st={max(min(exact_target_dur, 3.0) - 0.6, 0.2)}:d=0.6,volume={sfx_vol}[s];"
+                f"[2:a]{voice_filter}[v];"
                 f"[0:a][s][v]amix=inputs=3:duration=first:dropout_transition=0[a]",
-                "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
+                "-map", "[a]", "-t", str(exact_target_dur), "-ar", "44100", "-ac", "2", out_wav
             ], check=True)
-            return final_dur
+            return
     except Exception:
         pass
 
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={final_dur}",
+        "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={exact_target_dur}",
         "-i", trimmed_voice,
         "-filter_complex",
-        "[1:a]adelay=40|40,volume=1.35[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
-        "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
+        f"[1:a]{voice_filter}[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
+        "-map", "[a]", "-t", str(exact_target_dur), "-ar", "44100", "-ac", "2", out_wav
     ], check=True)
-    return final_dur
 
 
-def render_english_subtitle_png(phrase_text, png_path):
+def render_widescreen_subtitle_png(phrase_text, png_path):
     font_file = ensure_english_font()
-    img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
+    img = Image.new("RGBA", (VIDEO_W, VIDEO_H), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    font = ImageFont.truetype(font_file, 52)
+    font = ImageFont.truetype(font_file, 46)
 
     words = phrase_text.upper().split()
     full_text = " ".join(words)
     bbox = draw.textbbox((0, 0), full_text, font=font)
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
-    x_pos = (1080 - w) // 2
-    y_pos = 1520
+    x_pos = (VIDEO_W - w) // 2
+    y_pos = 920
 
-    pad_x, pad_y = 36, 18
+    pad_x, pad_y = 34, 16
     draw.rounded_rectangle(
-        [(x_pos - pad_x, y_pos - pad_y), (x_pos + w + pad_x, y_pos + h + pad_y + 12)],
-        radius=24,
-        fill=(10, 14, 22, 210),
+        [(x_pos - pad_x, y_pos - pad_y), (x_pos + w + pad_x, y_pos + h + pad_y + 10)],
+        radius=22,
+        fill=(10, 14, 22, 215),
         outline=(255, 200, 45, 235),
         width=3
     )
@@ -560,11 +679,8 @@ def render_english_subtitle_png(phrase_text, png_path):
     img.save(png_path, "PNG")
 
 
-def build_scene_clip(index, scene, all_scene_imgs):
+def build_scene_clip(index, scene, exact_duration, audio_file, all_scene_imgs):
     narration = scene["narration"]
-    audio_file = f"scene_{index}.wav"
-    duration = build_segment_audio(index, scene, audio_file)
-
     start_img = all_scene_imgs[index]
     next_img = all_scene_imgs[index + 1] if index + 1 < len(all_scene_imgs) else None
 
@@ -572,7 +688,7 @@ def build_scene_clip(index, scene, all_scene_imgs):
     base_video = f"base_{index}.mp4"
     video_file = f"scene_{index}.mp4"
     fps = 30
-    total_frames = int(duration * fps) + 10
+    total_frames = int(round(exact_duration * fps))
 
     ai_animated = animate_scene_smoothly(index, start_img, next_img, scene["motion_prompt"], raw_ai_video)
 
@@ -582,7 +698,7 @@ def build_scene_clip(index, scene, all_scene_imgs):
             "-of", "default=noprint_wrappers=1:nokey=1", raw_ai_video
         ], capture_output=True, text=True, check=True)
         raw_vid_dur = max(float(v_probe.stdout.strip() or "3.0"), 1.0)
-        stretch_factor = round((duration + 0.15) / raw_vid_dur, 3)
+        stretch_factor = round((exact_duration + 0.25) / raw_vid_dur, 3)
 
         subprocess.run([
             "ffmpeg", "-y", "-loglevel", "error",
@@ -590,12 +706,12 @@ def build_scene_clip(index, scene, all_scene_imgs):
             "-vf", (
                 f"setpts={stretch_factor}*PTS,"
                 f"minterpolate=fps={fps}:mi_mode=blend,"
-                f"tpad=stop_mode=clone:stop_duration=2,"
-                f"scale=1220:2168:force_original_aspect_ratio=increase,crop=1220:2168,"
-                f"crop=1080:1920:'(iw-1080)/2':'(ih-1920)/2 - 35*(t/{duration})',"
+                f"tpad=stop_mode=clone:stop_duration=3,"
+                f"scale=2112:1188:force_original_aspect_ratio=increase,crop=2112:1188,"
+                f"crop={VIDEO_W}:{VIDEO_H}:'(iw-{VIDEO_W})/2 - 35*(t/{exact_duration})':'(ih-{VIDEO_H})/2 - 20*(t/{exact_duration})',"
                 f"cas=0.65,setsar=1,format=yuv420p"
             ),
-            "-t", str(duration), "-r", str(fps),
+            "-t", str(exact_duration), "-r", str(fps),
             "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
         ], check=True)
     else:
@@ -603,25 +719,25 @@ def build_scene_clip(index, scene, all_scene_imgs):
             "ffmpeg", "-y", "-loglevel", "error",
             "-loop", "1", "-i", start_img,
             "-vf", (
-                f"scale=1440:2560:force_original_aspect_ratio=increase,crop=1440:2560,"
-                f"zoompan=z='min(zoom+0.0020,1.22)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                f"d={total_frames}:s=1080x1920:fps={fps},cas=0.6,setsar=1,format=yuv420p"
+                f"scale=2304:1296:force_original_aspect_ratio=increase,crop=2304:1296,"
+                f"zoompan=z='min(zoom+0.0005,1.18)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                f"d={total_frames + 15}:s={VIDEO_W}x{VIDEO_H}:fps={fps},cas=0.6,setsar=1,format=yuv420p"
             ),
-            "-t", str(duration), "-r", str(fps),
+            "-t", str(exact_duration), "-r", str(fps),
             "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
         ], check=True)
 
     clean_words = re.sub(r'["\'«»*():;,.?!—-]', '', narration).split()
-    phrases = [" ".join(clean_words[i:i + 3]) for i in range(0, len(clean_words), 3)] or ["..."]
-    step_dur = duration / max(len(phrases), 1)
+    phrases = [" ".join(clean_words[i:i + 5]) for i in range(0, len(clean_words), 5)] or ["..."]
+    step_dur = exact_duration / max(len(phrases), 1)
 
     inputs_cmd = ["-i", base_video, "-i", audio_file]
     filter_parts = []
     last_stream = "[0:v]"
     for p_idx, phrase in enumerate(phrases):
         png_file = f"sub_{index}_{p_idx}.png"
-        render_english_subtitle_png(phrase, png_file)
-        inputs_cmd.extend(["-loop", "1", "-t", str(duration), "-i", png_file])
+        render_widescreen_subtitle_png(phrase, png_file)
+        inputs_cmd.extend(["-loop", "1", "-t", str(exact_duration), "-i", png_file])
         start_t = round(p_idx * step_dur, 2)
         end_t = round((p_idx + 1) * step_dur, 2)
         next_stream = f"[v{p_idx}]"
@@ -631,73 +747,27 @@ def build_scene_clip(index, scene, all_scene_imgs):
         )
         last_stream = next_stream
 
-    filter_parts.append(f"{last_stream}format=yuv420p[vout]")
+    # انتقال ناعم ومستقل داخل كل مشهد (يمنع مشكلة التهنيج في المشاهد الأخيرة 100%)
+    fade_out_st = max(round(exact_duration - 0.25, 2), 0.5)
+    filter_parts.append(
+        f"{last_stream}fade=t=in:st=0:d=0.22,fade=t=out:st={fade_out_st}:d=0.25,format=yuv420p[vout]"
+    )
 
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
         *inputs_cmd,
         "-filter_complex", ";".join(filter_parts),
         "-map", "[vout]", "-map", "1:a",
-        "-t", str(duration),
+        "-t", str(exact_duration),
+        "-r", str(fps),
         "-c:v", "libx264", "-preset", "fast", "-crf", "16",
         "-c:a", "aac", "-ar", "44100", "-ac", "2",
         video_file
     ], check=True)
-    return video_file, duration
+    return video_file
 
 
-def merge_scenes_with_strong_transitions(scene_videos, scene_durations, out_merged_video):
-    trans_duration = 0.24
-    transition_types = ["fade", "smoothleft", "smoothright", "smoothup"]
-
-    inputs_cmd = []
-    for v in scene_videos:
-        inputs_cmd.extend(["-i", v])
-
-    v_filters = []
-    a_filters = []
-    cumulative_offset = 0.0
-    prev_v = "[0:v]"
-    prev_a = "[0:a]"
-
-    for i in range(1, len(scene_videos)):
-        cumulative_offset += scene_durations[i - 1] - trans_duration
-        offset_val = max(round(cumulative_offset, 2), 0.5)
-        t_type = transition_types[(i - 1) % len(transition_types)]
-        next_v = f"[vx{i}]" if i < len(scene_videos) - 1 else "[vfinal]"
-        next_a = f"[ax{i}]" if i < len(scene_videos) - 1 else "[afinal]"
-
-        v_filters.append(
-            f"{prev_v}[{i}:v]xfade=transition={t_type}:duration={trans_duration}:offset={offset_val}{next_v}"
-        )
-        a_filters.append(
-            f"{prev_a}[{i}:a]acrossfade=d={trans_duration}:c1=tri:c2=tri{next_a}"
-        )
-        prev_v = next_v
-        prev_a = next_a
-
-    full_filter = ";".join(v_filters + a_filters)
-    try:
-        subprocess.run([
-            "ffmpeg", "-y", "-loglevel", "error",
-            *inputs_cmd,
-            "-filter_complex", full_filter,
-            "-map", "[vfinal]", "-map", "[afinal]",
-            "-r", "30", "-c:v", "libx264", "-preset", "fast", "-crf", "16",
-            "-c:a", "aac", "-ar", "44100", "-ac", "2",
-            out_merged_video
-        ], check=True)
-    except Exception:
-        with open("inputs.txt", "w") as f:
-            for v in scene_videos:
-                f.write(f"file '{v}'\n")
-        subprocess.run([
-            "ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
-            "-i", "inputs.txt", "-c", "copy", out_merged_video
-        ], check=True)
-
-
-def upload_to_youtube(video_path, title, refresh_token):
+def upload_long_video_to_youtube(video_path, title, refresh_token):
     creds = Credentials(
         None,
         refresh_token=refresh_token,
@@ -707,13 +777,18 @@ def upload_to_youtube(video_path, title, refresh_token):
     )
     youtube = build("youtube", "v3", credentials=creds)
 
-    clean_title = f"{title[:68]} #history #shorts"[:95]
+    # بدون كلمة #shorts نهائياً حتى يحتسبه يوتيوب كفيديو طويل في شريط الـ Watch Hours!
+    clean_title = title[:95]
 
     body = {
         "snippet": {
             "title": clean_title,
-            "description": f"{title}\n\nThe true story of the 1859 Pig War between the United States and the British Empire.\n#history #weirdhistory #militaryhistory #facts #shorts",
-            "tags": ["pig war", "history", "weird history", "1859", "us history", "british empire", "shorts"],
+            "description": (
+                f"{title}\n\n"
+                "The full documentary story of the 1962 Alcatraz prison escape by Frank Morris, John Anglin, and Clarence Anglin.\n"
+                "#history #documentary #alcatraz #mystery #truecrime"
+            ),
+            "tags": ["alcatraz escape", "1962 alcatraz", "history documentary", "frank morris", "mystery", "how they escaped"],
             "categoryId": "27"
         },
         "status": {
@@ -723,93 +798,89 @@ def upload_to_youtube(video_path, title, refresh_token):
     }
     media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
     res = youtube.videos().insert(part="snippet,status", body=body, media_body=media).execute()
-    print(f"[YouTube] Uploaded successfully: https://youtu.be/{res['id']}", flush=True)
-
-
-def upload_to_facebook_reels(video_path, title, page_id):
-    file_size = os.path.getsize(video_path)
-    init_res = requests.post(
-        f"{GRAPH_API}/{page_id}/video_reels",
-        data={"upload_phase": "start", "access_token": META_ACCESS_TOKEN},
-        timeout=30
-    ).json()
-
-    video_id = init_res["video_id"]
-    upload_url = init_res["upload_url"]
-
-    with open(video_path, "rb") as f:
-        video_bytes = f.read()
-
-    headers = {
-        "Authorization": f"OAuth {META_ACCESS_TOKEN}",
-        "offset": "0",
-        "file_size": str(file_size),
-        "Content-Type": "application/octet-stream"
-    }
-    requests.post(upload_url, headers=headers, data=video_bytes, timeout=240).raise_for_status()
-
-    finish_res = requests.post(
-        f"{GRAPH_API}/{page_id}/video_reels",
-        data={
-            "upload_phase": "finish",
-            "video_id": video_id,
-            "video_state": "PUBLISHED",
-            "description": f"{title} 🐖🔥\n\n#history #weirdhistory #facts #reels",
-            "access_token": META_ACCESS_TOKEN
-        },
-        timeout=60
-    ).json()
-    print(f"[Facebook Reels] Published: {finish_res}", flush=True)
+    print(f"[YouTube Long-Form] Uploaded successfully: https://youtu.be/{res['id']}", flush=True)
 
 
 def assemble_and_publish():
-    title = "How Two Nations Nearly Started War Over One Stolen Pig"
+    title = "How 3 Men Escaped the Most Impossible Prison on Earth Using Spoons & Raincoats"
     uploaded_map = discover_uploaded_images_map()
-    print(f"📸 Uploaded Gemini images found: {len(uploaded_map)} ({sorted(uploaded_map.keys())})", flush=True)
+    print(f"📸 Uploaded Gemini images found in 'images/': {len(uploaded_map)} ({sorted(uploaded_map.keys())})", flush=True)
 
-    # تجهيز جميع الصور الـ 12 أولاً حتى نتمكن من ربط كل صورة بالتي تليها (Start -> End Frame)
+    # 1. تجهيز جميع الصور الـ 15 بمقاس 16:9 العرضي
     all_scene_imgs = []
-    for idx, scene in enumerate(PIG_WAR_SCENES):
+    for idx, scene in enumerate(ALCATRAZ_SCENES):
         img_file = f"scene_img_{idx}.jpg"
         obtain_scene_image(idx, scene["image_prompt"], img_file, uploaded_map)
         all_scene_imgs.append(img_file)
 
+    # 2. توليد الصوت الخام لجميع المشاهد الـ 15 وحساب التوزيع الزمني الدقيق ليصبح الإجمالي 275.0 ثانية (4:35) بالضبط!
+    print("🎙️ Generating English Documentary Voiceover & calibrating exact 04:35 (275.0s) timeline...", flush=True)
+    trimmed_voices = []
+    raw_durs = []
+    for idx, scene in enumerate(ALCATRAZ_SCENES):
+        t_wav, r_dur = generate_raw_voice_for_scene(idx, scene)
+        trimmed_voices.append(t_wav)
+        raw_durs.append(r_dur)
+
+    total_raw = sum(raw_durs)
+    exact_durations = []
+    running_sum = 0.0
+    for idx, r_dur in enumerate(raw_durs):
+        if idx < len(raw_durs) - 1:
+            scaled = round((r_dur / total_raw) * TARGET_TOTAL_VIDEO_SECONDS, 2)
+            exact_durations.append(scaled)
+            running_sum += scaled
+        else:
+            # المشهد الأخير يأخذ الباقي بالمللي ثانية ليصبح المجموع 275.00 ثانية بالضبط
+            last_dur = round(TARGET_TOTAL_VIDEO_SECONDS - running_sum, 2)
+            exact_durations.append(last_dur)
+
+    print(f"⏱️ Calibrated Scene Durations Sum: {round(sum(exact_durations), 2)}s (04:35 Exact)!", flush=True)
+
+    # 3. إنتاج المشاهد الـ 15 بدون أي تجميد
     scene_videos = []
-    scene_durations = []
-    for idx, scene in enumerate(PIG_WAR_SCENES):
-        print(f"--- Animating & Syncing Scene {idx + 1}/12 ---", flush=True)
-        clip, dur = build_scene_clip(idx, scene, all_scene_imgs)
+    for idx, scene in enumerate(ALCATRAZ_SCENES):
+        exact_dur = exact_durations[idx]
+        audio_wav = f"scene_audio_{idx}.wav"
+        finalize_scene_audio_exact(idx, scene, trimmed_voices[idx], raw_durs[idx], exact_dur, audio_wav)
+        print(f"--- Animating & Syncing Scene {idx + 1}/15 (Target: {exact_dur}s) ---", flush=True)
+        clip = build_scene_clip(idx, scene, exact_dur, audio_wav, all_scene_imgs)
         scene_videos.append(clip)
-        scene_durations.append(dur)
 
-    merged_video = "merged_short.mp4"
-    final_video = "final_short.mp4"
-    merge_scenes_with_strong_transitions(scene_videos, scene_durations, merged_video)
+    with open("inputs.txt", "w") as f:
+        for v in scene_videos:
+            f.write(f"file '{v}'\n")
 
+    merged_video = "merged_long.mp4"
+    final_video = "final_long_04_35.mp4"
+
+    subprocess.run([
+        "ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
+        "-i", "inputs.txt", "-c", "copy", merged_video
+    ], check=True)
+
+    # ضبط الخلفية الصوتية الوثائقية وقفل الطول النهائي على 275.0 ثانية (4 دقائق و35 ثانية بالضبط)
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
         "-i", merged_video,
         "-f", "lavfi", "-i", "anoisesrc=c=pink:a=0.005",
         "-filter_complex",
-        "[1:a]lowpass=f=260[bg];[0:a]volume=1.15[fg];[fg][bg]amix=inputs=2:duration=first:dropout_transition=1[a]",
+        f"[1:a]lowpass=f=240[bg];[0:a]apad=whole_dur={TARGET_TOTAL_VIDEO_SECONDS},volume=1.15[fg];"
+        f"[fg][bg]amix=inputs=2:duration=first:dropout_transition=1[a]",
         "-map", "0:v", "-map", "[a]",
-        "-c:v", "copy", "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "192k",
-        "-movflags", "+faststart", final_video
+        "-t", str(TARGET_TOTAL_VIDEO_SECONDS),
+        "-vf", f"scale={VIDEO_W}:{VIDEO_H},setsar=1,format=yuv420p",
+        "-r", "30", "-c:v", "libx264", "-preset", "fast", "-profile:v", "high",
+        "-level", "4.0", "-crf", "16", "-c:a", "aac", "-ar", "44100",
+        "-ac", "2", "-b:a", "192k", "-movflags", "+faststart", final_video
     ], check=True)
 
-    print("🚀 Publishing to YouTube & Facebook Reels...", flush=True)
+    print("🚀 Publishing 04:35 Long-Form Video to YouTube...", flush=True)
     for token in YT_REFRESH_TOKENS:
         try:
-            upload_to_youtube(final_video, title, token)
+            upload_long_video_to_youtube(final_video, title, token)
         except Exception as e:
             print(f"[YouTube Error] {e}", flush=True)
-
-    if META_ACCESS_TOKEN:
-        for page_id in FB_PAGE_IDS:
-            try:
-                upload_to_facebook_reels(final_video, title, page_id)
-            except Exception as e:
-                print(f"[Facebook Error] {e}", flush=True)
 
 
 assemble_and_publish()
