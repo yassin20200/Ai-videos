@@ -14,9 +14,9 @@ from googleapiclient.http import MediaFileUpload
 from gradio_client import Client, handle_file
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 
-print("🚀 Starting Lost Ancient Engineering Series Trailer Short (9:16 - Zero Lip-Sync - Uncut Audio)...", flush=True)
+print("🚀 Starting Uncut 16:9 Documentary Studio (Part 2: The Antikythera Mechanism - Zero Lip-Sync)...", flush=True)
 
-VIDEO_W, VIDEO_H = 1080, 1920  # Vertical 9:16 YouTube Shorts & Reels
+VIDEO_W, VIDEO_H = 1920, 1080  # Horizontal 16:9 Long-Form YouTube format
 ENGLISH_VOICE = os.getenv("ENGLISH_VOICE", "en-US-AndrewMultilingualNeural").strip() or "en-US-AndrewMultilingualNeural"
 
 BUILTIN_HF_KEYS = [
@@ -49,99 +49,206 @@ YT_CLIENT_ID = os.getenv("YT_CLIENT_ID", "").strip()
 YT_CLIENT_SECRET = os.getenv("YT_CLIENT_SECRET", "").strip()
 YT_REFRESH_TOKENS = [t.strip() for t in os.getenv("YT_REFRESH_TOKENS", "").split(",") if t.strip()]
 
-FB_PAGE_IDS = [p.strip() for p in os.getenv("FB_PAGE_IDS", "").split(",") if p.strip()]
-META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "").strip()
-
-GRAPH_API = "https://graph.facebook.com/v21.0"
 FONT_BOLD_PATH = "Montserrat-ExtraBold.ttf"
-MASTER_SEED = 202699
+MASTER_SEED = 202602
 
 os.environ.pop("HF_TOKEN", None)
 EXHAUSTED_ZEROGPU_TOKENS = set()
 
 SFX_LIBRARY = {
-    "impact": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.28),
-    "waves": ("https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg", 0.20),
-    "whoosh": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.24),
-    "fire": ("https://actions.google.com/sounds/v1/weather/wind_blowing.ogg", 0.22),
-    "clang": ("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg", 0.22)
+    "underwater": ("https://actions.google.com/sounds/v1/water/air_woosh_underwater.ogg", 0.22),
+    "waves": ("https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg", 0.18),
+    "impact": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.24),
+    "scan": ("https://actions.google.com/sounds/v1/science_fiction/sci_fi_osh.ogg", 0.20),
+    "whoosh": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.20),
+    "fire": ("https://actions.google.com/sounds/v1/weather/wind_blowing.ogg", 0.20)
 }
 
 STYLE_PREFIX = (
     "Masterpiece stylized 3D cinematic documentary render, Unreal Engine 5 studio lighting, "
-    "rich textures, dramatic shadows, ultra-crisp 8k vertical 9:16, no text, no watermarks. "
+    "rich textures, dramatic shadows, ultra-crisp 8k horizontal 16:9 widescreen, no text, no watermarks. "
 )
 
-TRAILER_SCENES = [
+# 15 مشهداً متكاملاً للجزء الثاني (آلية أنتيكيثيرا - بدون أي Lip-Sync!)
+ANTIKYTHERA_SCENES = [
     {
         "id": 0,
-        "sfx": "impact",
-        "narration": "Modern engineers still can't recreate five ancient inventions, and one of them is already hiding under the ocean!",
-        "image_prompt": f"{STYLE_PREFIX}Three mysterious glowing ancient artifacts on pedestals in a dark stone vault: a bronze gear computer, green liquid fire, and a Roman concrete column.",
-        "motion_prompt": "Dramatic 3D camera push-in through floating dust particles toward the three glowing ancient artifacts in the dark vault"
+        "sfx": "underwater",
+        "narration": (
+            "In the spring of nineteen hundred, a violent storm blew a crew of Greek sponge divers off course near the tiny rocky island of Antikythera. "
+            "When the waves calmed, a diver named Elias Stadiatis dropped one hundred and fifty feet into the freezing Aegean Sea. "
+            "Minutes later, he shot back to the surface trembling in terror, claiming he had found a seabed graveyard of rotting naked corpses and dead horses. "
+            "What he had actually discovered were two-thousand-year-old marble and bronze statues from an ancient sunken treasure ship."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}A 1900 Greek sponge diver in a brass helmet illuminating fallen ancient marble statues on the dark seabed.",
+        "motion_prompt": "Cinematic 3D underwater camera glide as the diver's beam sweeps across ancient statues resting on the dark ocean floor, floating particles"
     },
     {
         "id": 1,
-        "sfx": "waves",
-        "narration": "Part One: Why do modern concrete bridges crumble in fifty years, while two-thousand-year-old Roman harbors grow stronger?",
-        "image_prompt": f"{STYLE_PREFIX}Split-level shot showing a cracked modern bridge above and an intact submerged ancient Roman concrete harbor in blue ocean waves below.",
-        "motion_prompt": "Smooth 3D camera pan downward from the cracked bridge into the clear blue ocean waves surrounding the intact Roman pier"
+        "sfx": "impact",
+        "narration": (
+            "Over the next several months, divers hauled up priceless artifacts from a massive Roman-era cargo ship that sank around seventy BC: "
+            "towering bronze gods, delicate glassware, and gold jewelry. "
+            "Tossed aside in a museum courtyard was an ugly, barnacle-crusted green lump of corroded metal about the size of a shoebox. "
+            "No one cared about it until May of nineteen oh-two, when the lump dried out, cracked right down the middle, "
+            "and revealed precision-cut triangular bronze gear wheels hidden inside."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Macro close-up of a corroded green bronze chunk cracked open on a museum table revealing sharp triangular bronze gears inside.",
+        "motion_prompt": "Slow 3D macro camera push-in toward the sharp ancient bronze gear teeth emerging from the cracked green marine crust"
     },
     {
         "id": 2,
         "sfx": "whoosh",
-        "narration": "The Romans trapped tiny white calcium capsules inside hot-mixed mortar so their walls literally heal their own cracks.",
-        "image_prompt": f"{STYLE_PREFIX}Macro 3D cutaway of blue seawater hitting a white calcium sphere inside a concrete crack and crystallizing to seal it shut.",
-        "motion_prompt": "3D microscopic animation, sparkling white calcium crystals grow rapidly and seal the crack inside the stone wall"
+        "narration": (
+            "Archaeologists staring at those corroded gears felt the floor drop beneath them. "
+            "According to everything history books taught, complex interlocking gear trains like this did not appear until medieval European cathedral clocks "
+            "in the fourteenth century—more than one thousand four hundred years after this ship sank. "
+            "Finding a precision geared machine from ancient Greece was like opening an Egyptian pyramid and discovering a jet engine."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}A glowing ancient Greek bronze geared mechanism floating in golden light contrasted against a towering medieval stone clock tower.",
+        "motion_prompt": "Dramatic 3D camera sweep gliding from the glowing ancient bronze gear device toward the misty medieval cathedral clock tower"
     },
     {
         "id": 3,
-        "sfx": "waves",
-        "narration": "Part Two: Divers pulled a two-thousand-year-old bronze machine from a shipwreck, packed with precision gears.",
-        "image_prompt": f"{STYLE_PREFIX}Underwater 3D shot of a diver flashlight illuminating the encrusted bronze Antikythera Mechanism resting on the sandy seabed.",
-        "motion_prompt": "Underwater 3D camera glide as light beams sweep across the ancient bronze gears buried in the ocean floor"
+        "sfx": "whoosh",
+        "narration": (
+            "Soon known as the Antikythera Mechanism, the fragile artifact eventually split into eighty-two corroded fragments inside the National Archaeological Museum in Athens. "
+            "Two thousand years underwater had fused the delicate bronze plates into solid mineralized stone. "
+            "For over seventy years, historians could only guess what it did, because trying to pry the layers apart would instantly crumble the greatest machine of antiquity into dust."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Overhead museum shot of 82 corroded green bronze fragments laid out on black velvet trays under warm spotlights.",
+        "motion_prompt": "Smooth 3D overhead camera pan gliding slowly across the 82 ancient corroded bronze fragments on black velvet trays"
     },
     {
         "id": 4,
-        "sfx": "whoosh",
-        "narration": "An ancient analog computer that predicted eclipses and planetary orbits a thousand years before mechanical clocks!",
-        "image_prompt": f"{STYLE_PREFIX}Glowing 3D reconstruction of the bronze Antikythera Mechanism with interlocking golden cogwheels and celestial star rings.",
-        "motion_prompt": "Cinematic 3D mechanical animation, dozens of intricate golden bronze gears rotate smoothly inside glowing star-chart rings"
+        "sfx": "scan",
+        "narration": (
+            "The first real breakthrough arrived in nineteen seventy-one, when physicist Derek de Solla Price teamed up with Greek radiologist Charalampos Karakalos "
+            "to blast powerful gamma rays and X-rays straight through the corroded fragments. "
+            "When the glowing X-ray plates developed, the scientific world was stunned. "
+            "Hidden inside the green crust were at least thirty interlocking hand-cut bronze gears, packed into a wooden frame tighter than a modern Swiss watch."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Glowing blue-and-white X-ray plates hanging on a lightbox revealing thirty interlocking toothed gears inside corroded bronze.",
+        "motion_prompt": "3D laboratory animation, camera pushes smoothly toward the glowing X-ray lightbox illuminating the hidden gear silhouettes"
     },
     {
         "id": 5,
-        "sfx": "fire",
-        "narration": "Part Three: The Byzantine Empire guarded a terrifying liquid weapon called Greek Fire...",
-        "image_prompt": f"{STYLE_PREFIX}An ancient Byzantine warship shooting a roaring jet of blazing orange and green Greek Fire across dark stormy ocean waves.",
-        "motion_prompt": "Epic 3D naval action animation, blazing orange and green flames roar out from the bronze dragon siphon of the warship"
+        "sfx": "scan",
+        "narration": (
+            "Still, the true purpose of the machine remained only half-understood until two thousand and five, "
+            "when an international team flew an eight-ton high-resolution CT scanner called the Bladerunner into Athens. "
+            "Slicing through the solid metal digitally in three dimensions, the scanner uncovered over three thousand microscopic Greek letters "
+            "engraved directly onto the hidden inner plates—an actual ancient user manual explaining how to operate the world's first analog computer."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}A massive industrial CT scanner shining a glowing cyan laser grid over the bronze fragment with a 3D holographic scan floating above.",
+        "motion_prompt": "3D high-tech visualization, a glowing cyan CT scanner laser sweeps across the bronze fragment as golden 3D Greek letters illuminate"
     },
     {
         "id": 6,
-        "sfx": "fire",
-        "narration": "That burst into flames on top of water, couldn't be put out, and vanished into history forever.",
-        "image_prompt": f"{STYLE_PREFIX}Intense close-up of fierce neon-green and orange flames burning violently on top of splashing dark ocean waves at night.",
-        "motion_prompt": "3D elemental animation, emerald green and orange flames dance wildly across the rippling dark sea water"
+        "sfx": "whoosh",
+        "narration": (
+            "Using those three-dimensional scans, engineers finally reconstructed what the Antikythera Mechanism looked like when it was brand new. "
+            "It sat inside a polished wooden case with a single brass hand-crank on the side. "
+            "Turn that crank forward or backward to any date in history, and golden pointers spun around the front dial "
+            "to calculate the exact positions of the Sun, the Moon, and all five planets visible to the naked eye: Mercury, Venus, Mars, Jupiter, and Saturn."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Fully restored gleaming golden-bronze Antikythera Mechanism in a dark wooden case with a brass side crank and planetary pointers.",
+        "motion_prompt": "Majestic 3D mechanical animation, golden pointers and concentric bronze rings rotate smoothly around the restored front face of the ancient computer"
     },
     {
         "id": 7,
-        "sfx": "clang",
-        "narration": "Part Four: Ancient blacksmiths forged Damascus blades with microscopic carbon nanotubes inside the steel!",
-        "image_prompt": f"{STYLE_PREFIX}Macro 3D forge shot of a gleaming curved Damascus steel sword with swirling metallic patterns over red-hot embers and flying sparks.",
-        "motion_prompt": "3D forge animation, bright golden sparks float upward past the shimmering swirling patterns on the Damascus sword blade"
+        "sfx": "whoosh",
+        "narration": (
+            "Right near the center of the front dial sat one of the most charming pieces of engineering ever built: "
+            "a tiny metallic sphere painted half glossy black and half bright silver. "
+            "Driven by a miniature bevel gear hidden behind the faceplate, this little sphere rotated smoothly as you turned the hand crank, "
+            "automatically displaying the exact phase of the Moon—new, crescent, quarter, or full—for any night you chose."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Macro 3D close-up of a tiny half-black and half-silver metallic sphere rotating on a miniature bronze gear on the front dial.",
+        "motion_prompt": "Macro 3D mechanical animation, the gleaming half-black and half-silver moon sphere rotates smoothly on its miniature bronze gear"
     },
     {
         "id": 8,
         "sfx": "impact",
-        "narration": "And Part Five: A two-thousand-year-old bronze dragon machine that detected earthquakes hundreds of miles away!",
-        "image_prompt": f"{STYLE_PREFIX}Zhang Heng's ornate ancient Chinese bronze seismoscope urn with sculpted dragons dropping a metal ball toward a bronze toad below.",
-        "motion_prompt": "3D dramatic animation, the shiny bronze sphere drops cleanly from the sculpted dragon jaw toward the bronze toad below"
+        "narration": (
+            "But hidden deep behind that moon dial was a mechanical trick that left modern physicists speechless. "
+            "Because the Moon orbits Earth in an oval ellipse rather than a perfect circle, it actually speeds up when closer to Earth and slows down when farther away. "
+            "Somehow, the ancient Greek inventor modeled this variable speed using two stacked bronze gears mounted slightly off-center, "
+            "linked by a tiny metal pin sliding inside a slot—turning steady hand-cranking into an exact mathematical simulation of elliptical lunar motion."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}X-ray mechanical cutaway showing two stacked off-center golden bronze gears linked by a glowing pin sliding inside a curved slot.",
+        "motion_prompt": "Precision 3D engineering animation, the stacked off-center bronze gears rotate smoothly as the golden pin glides inside the curved slot"
     },
     {
         "id": 9,
         "sfx": "whoosh",
-        "narration": "Part One on Roman self-healing concrete is out right now—tap the linked video below to watch the full story, and subscribe for Part Two!",
-        "image_prompt": f"{STYLE_PREFIX}Inside the ancient Roman Pantheon as a golden sunbeam shines down through the dome oculus toward the bottom center of the frame.",
-        "motion_prompt": "Majestic 3D camera push-in inside the Roman Pantheon as golden rays of light shimmer downward"
+        "narration": (
+            "Flip the bronze computer over, and the back face is just as mind-blowing, dominated by two large spiral tracks shaped like bronze vinyl records. "
+            "The upper spiral tracked the nineteen-year Metonic cycle, a precise calendar that synchronized the solar year with lunar months across two hundred and thirty-five moons. "
+            "And tucked neatly beside it sat a tiny four-year dial that counted down the exact arrival of the ancient Olympic Games."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Detailed 3D shot of the back face of the bronze Antikythera Mechanism with two ornate spiral dials and a four-year Olympic Games dial.",
+        "motion_prompt": "Smooth 3D close-up pan across the ornate bronze spiral tracks and sliding pointers on the back face of the mechanism"
+    },
+    {
+        "id": 10,
+        "sfx": "impact",
+        "narration": (
+            "The lower spiral on the back was the most awe-inspiring feature of all: the two-hundred-and-twenty-three-month Saros eclipse predictor. "
+            "As the sliding needle traveled along the spiral groove, tiny engraved glyphs warned the user of upcoming solar and lunar eclipses down to the exact month, day, and hour. "
+            "Astonishingly, the microscopic Greek notes beside each glyph even predicted the direction of the shadow and whether the eclipsed moon would glow blood-red or dark black."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}The lower bronze spiral dial glowing in the foreground with a breathtaking blood-red lunar eclipse and golden solar eclipse unfolding behind it.",
+        "motion_prompt": "Cinematic 3D cosmic animation, the bronze eclipse dial glows while the blood-red lunar eclipse and golden solar corona shimmer in the night sky"
+    },
+    {
+        "id": 11,
+        "sfx": "fire",
+        "narration": (
+            "Who on Earth possessed both the genius astronomical math and the watchmaker-level metallurgy to file two hundred and twenty-three gear teeth by hand "
+            "within a fraction of a millimeter? "
+            "Clues in the regional calendar names engraved on the dials point directly to the school of the legendary inventor Archimedes of Syracuse, "
+            "or the astronomer Hipparchus on the island of Rhodes, who were famed in Roman texts for building mechanical bronze globes of the heavens."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Over-the-shoulder view of an ancient Greek craftsman's hands filing tiny gear teeth into a shiny bronze wheel by warm oil-lamp light.",
+        "motion_prompt": "Warm 3D historical animation, oil-lamp light flickers softly over the ancient craftsman's hands filing the gleaming bronze gear teeth"
+    },
+    {
+        "id": 12,
+        "sfx": "fire",
+        "narration": (
+            "This raises history's most haunting question: if the ancient Greeks built handheld bronze computers in one hundred BC, "
+            "why did this technology vanish from human civilization for fourteen centuries? "
+            "The tragic answer is simple: bronze was infinitely valuable and endlessly recyclable. "
+            "When empires collapsed, ancient scientific instruments weren't saved in museums—they were thrown into blazing furnaces and melted down into swords, coins, and bells. "
+            "The Antikythera Mechanism survived only because a deadly storm hid it at the bottom of the ocean."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}Inside a dark ancient foundry, glowing molten bronze pours into molds while broken bronze astrolabes and gear wheels wait beside the furnace.",
+        "motion_prompt": "Dramatic 3D foundry animation, glowing orange sparks rise as molten bronze pours beside piles of ancient discarded bronze gears"
+    },
+    {
+        "id": 13,
+        "sfx": "whoosh",
+        "narration": (
+            "Today, modern watchmakers and scientists at University College London have finally machined working brass replicas directly from the three-dimensional CT scans, "
+            "proving that every single gear tooth, epicycle, and pointer meshes together with breathtaking mechanical accuracy. "
+            "Every time that replica turns, it reminds us that ancient engineers were never primitive—they were just one shipwreck away from being forgotten completely."
+        ),
+        "image_prompt": f"{STYLE_PREFIX}A gleaming modern glass-cased working brass replica of the Antikythera Mechanism on a dark desk with polished golden gears turning.",
+        "motion_prompt": "Ultra-clean 3D horology camera orbit around the glass-cased modern brass replica as its polished golden gears mesh and turn"
+    },
+    {
+        "id": 14,
+        "sfx": "fire",
+        "narration": (
+            "The Antikythera Mechanism proved that ancient civilizations mastered precision computing long before modern history gives them credit for. "
+            "And this ancient mystery is only Part Two of our series. "
+            "In Part Three, we uncover the most terrifying secret chemical weapon of the ancient world: "
+            "Byzantine Greek Fire—a mysterious liquid flame that exploded on contact with water and saved an entire empire. "
+            "Subscribe now so you don't miss Part Three, and check the link below if you haven't watched Part One on Roman self-healing concrete!"
+        ),
+        "image_prompt": f"{STYLE_PREFIX}The glowing bronze Antikythera Mechanism on the left fading beside an ancient Byzantine warship blasting roaring green-and-orange Greek Fire across dark waves on the right.",
+        "motion_prompt": "Epic 3D cinematic closing animation, blazing green-and-orange Greek Fire erupts across the stormy waves beside the gleaming golden bronze gears"
     }
 ]
 
@@ -255,8 +362,23 @@ def discover_uploaded_images_map():
     return raw_num_map
 
 
-def save_clean_vertical_image(src_path, dst_file):
-    img = Image.open(src_path).convert("RGB").resize((VIDEO_W, VIDEO_H), Image.Resampling.LANCZOS)
+def save_clean_widescreen_image(src_path, dst_file):
+    img = Image.open(src_path).convert("RGB")
+    src_w, src_h = img.size
+    target_ratio = VIDEO_W / VIDEO_H
+    src_ratio = src_w / src_h
+
+    if abs(src_ratio - target_ratio) > 0.25:
+        bg = img.resize((VIDEO_W, VIDEO_H), Image.Resampling.LANCZOS).filter(ImageFilter.GaussianBlur(28))
+        bg = ImageEnhance.Brightness(bg).enhance(0.55)
+        new_h = VIDEO_H
+        new_w = int(src_w * (new_h / src_h))
+        fg = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        bg.paste(fg, ((VIDEO_W - new_w) // 2, 0))
+        img = bg
+    else:
+        img = img.resize((VIDEO_W, VIDEO_H), Image.Resampling.LANCZOS)
+
     img = ImageEnhance.Contrast(img).enhance(1.04)
     img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=110, threshold=3))
     img.save(dst_file, "JPEG", quality=98)
@@ -271,7 +393,7 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
     scene_num = index + 1
     if scene_num in uploaded_map:
         src = uploaded_map[scene_num]
-        save_clean_vertical_image(src, dst_jpg)
+        save_clean_widescreen_image(src, dst_jpg)
         print(f"📸 Using your uploaded Gemini image for Scene {scene_num}: ({src})!", flush=True)
         return
 
@@ -288,8 +410,8 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
                         prompt=image_prompt,
                         seed=MASTER_SEED,
                         randomize_seed=False,
-                        width=1024,
-                        height=1792,
+                        width=1792,
+                        height=1024,
                         guidance_scale=3.5,
                         num_inference_steps=steps,
                         api_name="/infer"
@@ -299,8 +421,8 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
                         prompt=image_prompt,
                         seed=MASTER_SEED,
                         randomize_seed=False,
-                        width=1024,
-                        height=1792,
+                        width=1792,
+                        height=1024,
                         num_inference_steps=steps,
                         api_name="/infer"
                     )
@@ -308,7 +430,7 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
                 if isinstance(img_path, dict) and "path" in img_path:
                     img_path = img_path["path"]
                 if isinstance(img_path, str) and os.path.exists(img_path):
-                    save_clean_vertical_image(img_path, dst_jpg)
+                    save_clean_widescreen_image(img_path, dst_jpg)
                     return
             except Exception as e:
                 if is_quota_error(e):
@@ -337,9 +459,9 @@ def extract_video_path(result):
     return None
 
 
-def animate_scene_cinematic(index, start_img, motion_prompt, out_raw_video):
-    full_motion = f"{motion_prompt}, smooth continuous 3D cinematic animation, high quality, vivid lighting"
-    neg_prompt = "morphing, deforming, melting, warping, blurry, low quality, worst quality, text, watermark, nsfw"
+def animate_scene_smoothly(index, scene, start_img, out_raw_video):
+    full_motion = f"{scene['motion_prompt']}, smooth continuous 3D cinematic documentary animation, high quality, no talking, keep structure intact"
+    neg_prompt = "talking face, open mouth, morphing, deforming, melting, warping, blurry, low quality, worst quality, text, watermark, nsfw"
     all_pool = [None] + HF_TOKENS
 
     for pool_idx, tok in enumerate(all_pool):
@@ -349,7 +471,7 @@ def animate_scene_cinematic(index, start_img, motion_prompt, out_raw_video):
         label = "Free Server IP" if tok is None else f"HF Token #{pool_idx} ({tok[:10]}...)"
         try:
             wan_space = "zerogpu-aoti/wan2-2-fp8da-aoti-faster"
-            print(f"🎬 Animating Scene {index + 1} via ({wan_space} - {label})...", flush=True)
+            print(f"🎬 Animating Scene {index + 1}/15 (3D Documentary) via ({wan_space} - {label})...", flush=True)
             client = Client(wan_space, token=tok, verbose=False)
             res = client.predict(
                 input_image=handle_file(start_img),
@@ -397,7 +519,7 @@ def vtt_time_to_seconds(t_str):
     return 0.0
 
 
-def parse_vtt_into_3word_phrases(vtt_path, fallback_text, total_dur, delay_sec=0.08):
+def parse_vtt_into_5word_phrases(vtt_path, fallback_text, total_dur, delay_sec=0.15):
     phrases = []
     if os.path.exists(vtt_path):
         try:
@@ -417,7 +539,7 @@ def parse_vtt_into_3word_phrases(vtt_path, fallback_text, total_dur, delay_sec=0
                 if not clean_words or et <= st:
                     continue
 
-                chunks = [" ".join(clean_words[i:i + 3]) for i in range(0, len(clean_words), 3)]
+                chunks = [" ".join(clean_words[i:i + 5]) for i in range(0, len(clean_words), 5)]
                 c_step = (et - st) / len(chunks)
                 for c_i, ch in enumerate(chunks):
                     c_start = round(st + c_i * c_step, 2)
@@ -430,15 +552,12 @@ def parse_vtt_into_3word_phrases(vtt_path, fallback_text, total_dur, delay_sec=0
         return phrases
 
     clean_words = re.sub(r'["\'«»*():;,.?!—-]', '', fallback_text).split()
-    chunks = [" ".join(clean_words[i:i + 3]) for i in range(0, len(clean_words), 3)] or ["..."]
+    chunks = [" ".join(clean_words[i:i + 5]) for i in range(0, len(clean_words), 5)] or ["..."]
     step = total_dur / len(chunks)
     return [(ch, round(idx * step, 2), round((idx + 1) * step, 2)) for idx, ch in enumerate(chunks)]
 
 
-def build_uncut_short_audio(seg_idx, scene, out_wav):
-    """
-    صوت واضح وسريع ومشوق للشورت بدون أي قص في نهاية الكلمات (Zero Truncation)
-    """
+def build_uncut_crystal_clear_audio(seg_idx, scene, out_wav):
     text = scene["narration"]
     sfx_key = scene["sfx"]
 
@@ -448,14 +567,14 @@ def build_uncut_short_audio(seg_idx, scene, out_wav):
     sfx_ogg = f"seg_sfx_{seg_idx}.ogg"
 
     voice_ok = False
-    for v_name in [ENGLISH_VOICE, "en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural"]:
+    for v_name in [ENGLISH_VOICE, "en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural", "en-US-ChristopherNeural"]:
         try:
             subprocess.run([
-                "edge-tts", "--voice", v_name, "--rate=+6%",
+                "edge-tts", "--voice", v_name, "--rate=-2%",
                 "--text", text,
                 "--write-media", raw_mp3,
                 "--write-subtitles", raw_vtt
-            ], check=True, timeout=30, stderr=subprocess.DEVNULL)
+            ], check=True, timeout=45, stderr=subprocess.DEVNULL)
             if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
                 voice_ok = True
                 break
@@ -485,11 +604,10 @@ def build_uncut_short_audio(seg_idx, scene, out_wav):
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", clean_voice_wav
     ], capture_output=True, text=True, check=True)
-    v_dur = float(probe.stdout.strip() or "4.5")
+    v_dur = float(probe.stdout.strip() or "18.0")
 
-    # إضافة 0.35 ثانية بعد انتهاء الصوت لضمان وضوح آخر كلمة وعدم قطعها مع إيقاع سريع للشورت
-    final_dur = round(v_dur + 0.35, 2)
-    timed_phrases = parse_vtt_into_3word_phrases(raw_vtt, text, final_dur, delay_sec=0.08)
+    final_dur = round(v_dur + 0.80, 2)
+    timed_phrases = parse_vtt_into_5word_phrases(raw_vtt, text, final_dur, delay_sec=0.15)
 
     sfx_url, sfx_vol = SFX_LIBRARY.get(sfx_key, SFX_LIBRARY["whoosh"])
     try:
@@ -503,8 +621,8 @@ def build_uncut_short_audio(seg_idx, scene, out_wav):
                 "-i", sfx_ogg,
                 "-i", clean_voice_wav,
                 "-filter_complex",
-                f"[1:a]atrim=0:{min(final_dur, 1.8)},afade=t=in:d=0.05,afade=t=out:st={max(min(final_dur, 1.8) - 0.35, 0.1)}:d=0.35,volume={sfx_vol}[s];"
-                f"[2:a]adelay=80|80,apad=pad_dur=0.25,volume=1.40[v];"
+                f"[1:a]atrim=0:{min(final_dur, 3.0)},afade=t=in:d=0.1,afade=t=out:st={max(min(final_dur, 3.0) - 0.6, 0.2)}:d=0.6,volume={sfx_vol}[s];"
+                f"[2:a]adelay=150|150,apad=pad_dur=0.65,volume=1.40[v];"
                 f"[0:a][s][v]amix=inputs=3:duration=first:dropout_transition=0[a]",
                 "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
             ], check=True)
@@ -517,17 +635,17 @@ def build_uncut_short_audio(seg_idx, scene, out_wav):
         "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={final_dur}",
         "-i", clean_voice_wav,
         "-filter_complex",
-        "[1:a]adelay=80|80,apad=pad_dur=0.25,volume=1.40[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
+        "[1:a]adelay=150|150,apad=pad_dur=0.65,volume=1.40[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
         "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
     ], check=True)
     return final_dur, timed_phrases
 
 
-def render_short_subtitle_png(phrase_text, png_path):
+def render_widescreen_subtitle_png(phrase_text, png_path):
     font_file = ensure_english_font()
     img = Image.new("RGBA", (VIDEO_W, VIDEO_H), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    font = ImageFont.truetype(font_file, 52)
+    font = ImageFont.truetype(font_file, 46)
 
     words = phrase_text.upper().split()
     full_text = " ".join(words)
@@ -535,12 +653,12 @@ def render_short_subtitle_png(phrase_text, png_path):
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
     x_pos = (VIDEO_W - w) // 2
-    y_pos = 1480
+    y_pos = 920
 
-    pad_x, pad_y = 34, 18
+    pad_x, pad_y = 34, 16
     draw.rounded_rectangle(
-        [(x_pos - pad_x, y_pos - pad_y), (x_pos + w + pad_x, y_pos + h + pad_y + 12)],
-        radius=24,
+        [(x_pos - pad_x, y_pos - pad_y), (x_pos + w + pad_x, y_pos + h + pad_y + 10)],
+        radius=22,
         fill=(10, 14, 22, 215),
         outline=(255, 200, 45, 235),
         width=3
@@ -565,7 +683,7 @@ def render_short_subtitle_png(phrase_text, png_path):
 
 def build_scene_clip(index, scene, all_scene_imgs):
     audio_file = f"scene_audio_{index}.wav"
-    duration, timed_phrases = build_uncut_short_audio(index, scene, audio_file)
+    duration, timed_phrases = build_uncut_crystal_clear_audio(index, scene, audio_file)
 
     start_img = all_scene_imgs[index]
     raw_ai_video = f"raw_ai_{index}.mp4"
@@ -574,15 +692,15 @@ def build_scene_clip(index, scene, all_scene_imgs):
     fps = 30
     total_frames = int(round(duration * fps))
 
-    ai_animated = animate_scene_cinematic(index, start_img, scene["motion_prompt"], raw_ai_video)
+    ai_animated = animate_scene_smoothly(index, scene, start_img, raw_ai_video)
 
     if ai_animated and os.path.exists(raw_ai_video):
         v_probe = subprocess.run([
             "ffprobe", "-v", "error", "-show_entries", "format=duration",
             "-of", "default=noprint_wrappers=1:nokey=1", raw_ai_video
         ], capture_output=True, text=True, check=True)
-        raw_vid_dur = max(float(v_probe.stdout.strip() or "3.2"), 1.0)
-        stretch_factor = round((duration + 0.15) / raw_vid_dur, 3)
+        raw_vid_dur = max(float(v_probe.stdout.strip() or "3.0"), 1.0)
+        stretch_factor = round((duration + 0.25) / raw_vid_dur, 3)
 
         subprocess.run([
             "ffmpeg", "-y", "-loglevel", "error",
@@ -590,9 +708,9 @@ def build_scene_clip(index, scene, all_scene_imgs):
             "-vf", (
                 f"setpts={stretch_factor}*PTS,"
                 f"minterpolate=fps={fps}:mi_mode=blend,"
-                f"tpad=stop_mode=clone:stop_duration=2,"
-                f"scale=1220:2168:force_original_aspect_ratio=increase,crop=1220:2168,"
-                f"crop={VIDEO_W}:{VIDEO_H}:'(iw-{VIDEO_W})/2':'(ih-{VIDEO_H})/2 - 35*(t/{duration})',"
+                f"tpad=stop_mode=clone:stop_duration=3,"
+                f"scale=2112:1188:force_original_aspect_ratio=increase,crop=2112:1188,"
+                f"crop={VIDEO_W}:{VIDEO_H}:'(iw-{VIDEO_W})/2 - 35*(t/{duration})':'(ih-{VIDEO_H})/2 - 20*(t/{duration})',"
                 f"cas=0.65,setsar=1,format=yuv420p"
             ),
             "-t", str(duration), "-r", str(fps),
@@ -603,8 +721,8 @@ def build_scene_clip(index, scene, all_scene_imgs):
             "ffmpeg", "-y", "-loglevel", "error",
             "-loop", "1", "-i", start_img,
             "-vf", (
-                f"scale=1440:2560:force_original_aspect_ratio=increase,crop=1440:2560,"
-                f"zoompan=z='min(zoom+0.0020,1.22)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                f"scale=2304:1296:force_original_aspect_ratio=increase,crop=2304:1296,"
+                f"zoompan=z='min(zoom+0.0005,1.18)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                 f"d={total_frames + 15}:s={VIDEO_W}x{VIDEO_H}:fps={fps},cas=0.6,setsar=1,format=yuv420p"
             ),
             "-t", str(duration), "-r", str(fps),
@@ -616,7 +734,7 @@ def build_scene_clip(index, scene, all_scene_imgs):
     last_stream = "[0:v]"
     for p_idx, (phrase, start_t, end_t) in enumerate(timed_phrases):
         png_file = f"sub_{index}_{p_idx}.png"
-        render_short_subtitle_png(phrase, png_file)
+        render_widescreen_subtitle_png(phrase, png_file)
         inputs_cmd.extend(["-loop", "1", "-t", str(duration), "-i", png_file])
         next_stream = f"[v{p_idx}]"
         inp_idx = p_idx + 2
@@ -625,10 +743,9 @@ def build_scene_clip(index, scene, all_scene_imgs):
         )
         last_stream = next_stream
 
-    # انتقال سريع وناعم (0.10 ثانية) مضمون 100% بدون أي تجميد في المشاهد الأخيرة!
-    fade_out_st = max(round(duration - 0.10, 2), 0.3)
+    fade_out_st = max(round(duration - 0.25, 2), 0.5)
     filter_parts.append(
-        f"{last_stream}fade=t=in:st=0:d=0.08,fade=t=out:st={fade_out_st}:d=0.10,format=yuv420p[vout]"
+        f"{last_stream}fade=t=in:st=0:d=0.22,fade=t=out:st={fade_out_st}:d=0.25,format=yuv420p[vout]"
     )
 
     subprocess.run([
@@ -645,7 +762,7 @@ def build_scene_clip(index, scene, all_scene_imgs):
     return video_file, duration
 
 
-def upload_to_youtube(video_path, title, refresh_token):
+def upload_long_video_to_youtube(video_path, title, refresh_token):
     creds = Credentials(
         None,
         refresh_token=refresh_token,
@@ -655,17 +772,17 @@ def upload_to_youtube(video_path, title, refresh_token):
     )
     youtube = build("youtube", "v3", credentials=creds)
 
-    clean_title = f"{title[:72]} #shorts #history"[:95]
+    clean_title = title[:95]
 
     body = {
         "snippet": {
             "title": clean_title,
             "description": (
                 f"{title}\n\n"
-                "Watch Part 1 (Roman Self-Healing Concrete) linked right below this Short! 👇\n"
-                "#shorts #history #engineering #science #ancientmysteries"
+                "Part 2 of Lost Ancient Engineering Secrets: The unbelievable story of the 2,000-year-old Antikythera Mechanism—the world's oldest analog computer found at the bottom of the Aegean Sea.\n"
+                "#history #engineering #antikythera #ancientgreece #documentary #science"
             ),
-            "tags": ["ancient engineering", "lost inventions", "roman concrete", "antikythera mechanism", "greek fire", "shorts"],
+            "tags": ["antikythera mechanism", "ancient computer", "ancient engineering", "history documentary", "ancient greece", "lost technology"],
             "categoryId": "27"
         },
         "status": {
@@ -675,72 +792,36 @@ def upload_to_youtube(video_path, title, refresh_token):
     }
     media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
     res = youtube.videos().insert(part="snippet,status", body=body, media_body=media).execute()
-    print(f"[YouTube Short] Uploaded successfully: https://youtu.be/{res['id']}", flush=True)
-
-
-def upload_to_facebook_reels(video_path, title, page_id):
-    file_size = os.path.getsize(video_path)
-    init_res = requests.post(
-        f"{GRAPH_API}/{page_id}/video_reels",
-        data={"upload_phase": "start", "access_token": META_ACCESS_TOKEN},
-        timeout=30
-    ).json()
-
-    video_id = init_res["video_id"]
-    upload_url = init_res["upload_url"]
-
-    with open(video_path, "rb") as f:
-        video_bytes = f.read()
-
-    headers = {
-        "Authorization": f"OAuth {META_ACCESS_TOKEN}",
-        "offset": "0",
-        "file_size": str(file_size),
-        "Content-Type": "application/octet-stream"
-    }
-    requests.post(upload_url, headers=headers, data=video_bytes, timeout=240).raise_for_status()
-
-    finish_res = requests.post(
-        f"{GRAPH_API}/{page_id}/video_reels",
-        data={
-            "upload_phase": "finish",
-            "video_id": video_id,
-            "video_state": "PUBLISHED",
-            "description": f"{title} 🔥\n\n#history #engineering #facts #reels",
-            "access_token": META_ACCESS_TOKEN
-        },
-        timeout=60
-    ).json()
-    print(f"[Facebook Reels] Published: {finish_res}", flush=True)
+    print(f"[YouTube Long-Form] Uploaded successfully: https://youtu.be/{res['id']}", flush=True)
 
 
 def assemble_and_publish():
-    title = "5 Ancient Inventions Modern Science Still Can't Recreate!"
+    title = "The 2,000-Year-Old Ancient Computer Found at the Bottom of the Sea (Part 2)"
     uploaded_img_map = discover_uploaded_images_map()
     print(f"📸 Uploaded Gemini images found in 'images/': {len(uploaded_img_map)} ({sorted(uploaded_img_map.keys())})", flush=True)
 
     all_scene_imgs = []
-    for idx, scene in enumerate(TRAILER_SCENES):
+    for idx, scene in enumerate(ANTIKYTHERA_SCENES):
         img_file = f"scene_img_{idx}.jpg"
         obtain_scene_image(idx, scene["image_prompt"], img_file, uploaded_img_map)
         all_scene_imgs.append(img_file)
 
     scene_videos = []
     total_dur = 0.0
-    for idx, scene in enumerate(TRAILER_SCENES):
-        print(f"--- Producing Short Scene {idx + 1}/10 ---", flush=True)
+    for idx, scene in enumerate(ANTIKYTHERA_SCENES):
+        print(f"--- Producing Uncut Scene {idx + 1}/15 ---", flush=True)
         clip, dur = build_scene_clip(idx, scene, all_scene_imgs)
         scene_videos.append(clip)
         total_dur += dur
 
-    print(f"⏱️ Total Short Duration: {round(total_dur, 1)}s (Perfect Under-60s Trailer!)", flush=True)
+    print(f"⏱️ Total Uncut Documentary Duration: {round(total_dur, 1)}s ({round(total_dur / 60, 2)} minutes)!", flush=True)
 
     with open("inputs.txt", "w") as f:
         for v in scene_videos:
             f.write(f"file '{v}'\n")
 
-    merged_video = "merged_short.mp4"
-    final_video = "final_trailer_short.mp4"
+    merged_video = "merged_long.mp4"
+    final_video = "final_antikythera_part2.mp4"
 
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
@@ -760,19 +841,12 @@ def assemble_and_publish():
         "-ac", "2", "-b:a", "192k", "-movflags", "+faststart", final_video
     ], check=True)
 
-    print("🚀 Publishing Trailer Short to YouTube & Facebook Reels...", flush=True)
+    print("🚀 Publishing Part 2 Long-Form Documentary to YouTube...", flush=True)
     for token in YT_REFRESH_TOKENS:
         try:
-            upload_to_youtube(final_video, title, token)
+            upload_long_video_to_youtube(final_video, title, token)
         except Exception as e:
             print(f"[YouTube Error] {e}", flush=True)
-
-    if META_ACCESS_TOKEN:
-        for page_id in FB_PAGE_IDS:
-            try:
-                upload_to_facebook_reels(final_video, title, page_id)
-            except Exception as e:
-                print(f"[Facebook Error] {e}", flush=True)
 
 
 assemble_and_publish()
