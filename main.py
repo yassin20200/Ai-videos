@@ -14,7 +14,7 @@ from googleapiclient.http import MediaFileUpload
 from gradio_client import Client, handle_file
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 
-print("🚀 Starting Ancient Engineering Documentary Studio (Whisper Audio Sync + Lip-Sync + 16:9 HD)...", flush=True)
+print("🚀 Starting Uncut 16:9 Documentary Studio (Part 1: Roman Concrete - 100% Uncut Studio Audio)...", flush=True)
 
 VIDEO_W, VIDEO_H = 1920, 1080  # Horizontal 16:9 Long-Form YouTube format
 ENGLISH_VOICE = os.getenv("ENGLISH_VOICE", "en-US-AndrewMultilingualNeural").strip() or "en-US-AndrewMultilingualNeural"
@@ -56,11 +56,11 @@ os.environ.pop("HF_TOKEN", None)
 EXHAUSTED_ZEROGPU_TOKENS = set()
 
 SFX_LIBRARY = {
-    "waves": ("https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg", 0.20),
-    "crumble": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.24),
-    "fire": ("https://actions.google.com/sounds/v1/weather/wind_blowing.ogg", 0.22),
-    "whoosh": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.22),
-    "water": ("https://actions.google.com/sounds/v1/water/water_splashing.ogg", 0.22)
+    "waves": ("https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg", 0.18),
+    "crumble": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.22),
+    "fire": ("https://actions.google.com/sounds/v1/weather/wind_blowing.ogg", 0.18),
+    "whoosh": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.20),
+    "water": ("https://actions.google.com/sounds/v1/water/water_splashing.ogg", 0.20)
 }
 
 STYLE_PREFIX = (
@@ -329,19 +329,6 @@ class PinnedSpace:
         Path(dst).write_bytes(content)
 
 
-def ensure_faster_whisper():
-    try:
-        import faster_whisper  # noqa: F401
-        return True
-    except ImportError:
-        print("📦 Installing faster-whisper for precision audio analysis & word timestamps...", flush=True)
-        try:
-            subprocess.run(["pip", "install", "-q", "faster-whisper"], check=True)
-            return True
-        except Exception:
-            return False
-
-
 def ensure_english_font():
     if os.path.exists(FONT_BOLD_PATH) and os.path.getsize(FONT_BOLD_PATH) > 10000:
         return FONT_BOLD_PATH
@@ -358,6 +345,7 @@ def ensure_english_font():
 
 
 def discover_uploaded_images_map():
+    """فحص فولدر images أولاً ثم scenes ثم المجلد الرئيسي"""
     valid_exts = (".jpg", ".jpeg", ".png", ".webp", ".jfif")
     ignore_prefixes = ("scene_", "stage_", "temp_", "sub_", "base_", "raw_", "stretched_", "nuclear_")
     raw_num_map = {}
@@ -381,155 +369,6 @@ def discover_uploaded_images_map():
     if 0 in raw_num_map:
         return {k + 1: v for k, v in raw_num_map.items()}
     return raw_num_map
-
-
-def discover_uploaded_audio_assets():
-    """
-    البحث الذكي عن الصوت الذي رفعه المستخدم في فولدر images أو المجلد الرئيسي:
-    - يدعم رفع ملف صوتي واحد كامل (مثل voice.mp3 أو audio.mp3) ويقسمه تلقائياً عبر Whisper!
-    - أو يدعم رفع ملفات مقسمة (1.mp3, 2.mp3 ... 15.mp3)!
-    """
-    audio_exts = (".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac")
-    ignore_prefixes = ("seg_", "scene_", "stage_", "raw_", "master_", "temp_")
-    numbered_audios = {}
-    single_full_audio = None
-
-    for root_dir in ["images", "scenes", "."]:
-        if not os.path.exists(root_dir):
-            continue
-        for fname in os.listdir(root_dir):
-            low = fname.lower()
-            if low.endswith(audio_exts) and not low.startswith(ignore_prefixes):
-                full_p = os.path.join(root_dir, fname)
-                if os.path.isfile(full_p) and os.path.getsize(full_p) > 5000:
-                    trans = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
-                    normalized = fname.translate(trans)
-                    nums = re.findall(r"\d+", normalized)
-                    if nums and int(nums[0]) <= 30 and not any(k in low for k in ("voice", "full", "master", "audio")):
-                        idx_num = int(nums[0])
-                        if idx_num not in numbered_audios:
-                            numbered_audios[idx_num] = full_p
-                    else:
-                        if single_full_audio is None or os.path.getsize(full_p) > os.path.getsize(single_full_audio):
-                            single_full_audio = full_p
-
-    return single_full_audio, numbered_audios
-
-
-def split_full_uploaded_audio_with_whisper(full_audio_path, scenes):
-    """
-    تحليل ملف الصوت الكامل المرفوع من المستخدم عبر Faster-Whisper
-    واستخراج بداية ونهاية كل مشهد بالمللي ثانية بدون قطع أي كلمة!
-    """
-    print(f"🎧 Analyzing your uploaded master audio ({full_audio_path}) with Faster-Whisper AI...", flush=True)
-    probe = subprocess.run([
-        "ffprobe", "-v", "error", "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1", full_audio_path
-    ], capture_output=True, text=True, check=True)
-    total_audio_dur = float(probe.stdout.strip() or "330.0")
-
-    scene_Slices = []
-    if ensure_faster_whisper():
-        try:
-            from faster_whisper import WhisperModel
-            model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
-            segments, _ = model.transcribe(full_audio_path, word_timestamps=True)
-            all_words = []
-            for seg in segments:
-                for w in (seg.words or []):
-                    clean_w = re.sub(r"[^a-z0-9]", "", w.word.lower())
-                    if clean_w:
-                        all_words.append({"word": clean_w, "start": w.start, "end": w.end})
-
-            if len(all_words) > 30:
-                # مطابقة عدد كلمات كل مشهد مع الكلمات المنطوقة في ملف الصوت المرفوع
-                scene_word_counts = [len(re.findall(r"[a-zA-Z0-9]+", s["narration"])) for s in scenes]
-                total_script_words = max(sum(scene_word_counts), 1)
-                curr_w_idx = 0
-                prev_cut_time = 0.0
-
-                for s_i, w_count in enumerate(scene_word_counts):
-                    if s_i == len(scenes) - 1:
-                        end_time = total_audio_dur
-                    else:
-                        ratio = sum(scene_word_counts[:s_i + 1]) / total_script_words
-                        est_idx = min(int(round(ratio * len(all_words))) - 1, len(all_words) - 2)
-                        # البحث عن أقرب وقفة طبيعية بين الجمل حول الكلمة المتوقعة
-                        best_idx = est_idx
-                        best_gap = -1.0
-                        search_start = max(curr_w_idx + 5, est_idx - 10)
-                        search_end = min(len(all_words) - 2, est_idx + 10)
-                        for k in range(search_start, search_end + 1):
-                            gap = all_words[k + 1]["start"] - all_words[k]["end"]
-                            if gap > best_gap:
-                                best_gap = gap
-                                best_idx = k
-                        end_time = round((all_words[best_idx]["end"] + all_words[best_idx + 1]["start"]) / 2.0, 2)
-                        curr_w_idx = best_idx + 1
-
-                    scene_Slices.append((prev_cut_time, max(end_time, prev_cut_time + 3.0)))
-                    prev_cut_time = end_time
-
-                print("✅ Faster-Whisper aligned all 15 scenes to your uploaded voiceover with millisecond precision!", flush=True)
-        except Exception as e:
-            print(f"⚠️ Whisper fallback to proportional timing: {e}", flush=True)
-
-    if not scene_Slices:
-        weights = [len(s["narration"]) for s in scenes]
-        total_w = sum(weights)
-        acc = 0.0
-        for s_i, w in enumerate(weights):
-            st = round((acc / total_w) * total_audio_dur, 2)
-            acc += w
-            et = total_audio_dur if s_i == len(scenes) - 1 else round((acc / total_w) * total_audio_dur, 2)
-            scene_Slices.append((st, et))
-
-    sliced_files = {}
-    for s_i, (st, et) in enumerate(scene_Slices):
-        dst_wav = f"user_slice_{s_i}.wav"
-        dur = round(et - st, 2)
-        subprocess.run([
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-ss", str(st), "-t", str(dur),
-            "-i", full_audio_path,
-            "-ar", "44100", "-ac", "2", dst_wav
-        ], check=True)
-        sliced_files[s_i + 1] = dst_wav
-
-    return sliced_files
-
-
-def extract_whisper_phrases_for_scene(audio_wav, fallback_text, duration):
-    """
-    استخراج عبارات الكابشن المتزامنة بالمللي ثانية مع صوت المستخدم عبر Faster-Whisper
-    """
-    if ensure_faster_whisper():
-        try:
-            from faster_whisper import WhisperModel
-            model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
-            segments, _ = model.transcribe(audio_wav, word_timestamps=True)
-            words = []
-            for seg in segments:
-                for w in (seg.words or []):
-                    cleaned = re.sub(r'["\'«»*():;,.?!—-]', '', w.word).strip()
-                    if cleaned:
-                        words.append({"text": cleaned, "start": max(0.0, w.start), "end": min(duration, w.end)})
-            if len(words) >= 4:
-                phrases = []
-                for i in range(0, len(words), 5):
-                    chunk = words[i:i + 5]
-                    p_text = " ".join(c["text"] for c in chunk)
-                    p_start = round(chunk[0]["start"], 2)
-                    p_end = round(chunk[-1]["end"] + 0.15, 2)
-                    phrases.append((p_text, p_start, min(p_end, duration)))
-                return phrases
-        except Exception:
-            pass
-
-    clean_words = re.sub(r'["\'«»*():;,.?!—-]', '', fallback_text).split()
-    chunks = [" ".join(clean_words[i:i + 5]) for i in range(0, len(clean_words), 5)] or ["..."]
-    step = duration / len(chunks)
-    return [(ch, round(idx * step, 2), round((idx + 1) * step, 2)) for idx, ch in enumerate(chunks)]
 
 
 def save_clean_widescreen_image(src_path, dst_file):
@@ -629,10 +468,7 @@ def extract_video_path(result):
     return None
 
 
-def animate_scene_with_lipsync_or_wan(index, scene, start_img, next_img, audio_file, out_raw_video):
-    """
-    يدعم تحريك الشفايف (Audio-Driven Lip-Sync) للمشاهد الناطقة + التحريك السينمائي المستمر Wan 2.2
-    """
+def animate_scene_with_lipsync_or_wan(index, scene, start_img, next_img, out_raw_video):
     motion_prompt = scene["motion_prompt"]
     is_lipsync = scene.get("lip_sync", False)
     full_motion = (
@@ -643,34 +479,38 @@ def animate_scene_with_lipsync_or_wan(index, scene, start_img, next_img, audio_f
     neg_prompt = "morphing, deforming, melting, warping, blurry, low quality, worst quality, text, watermark, nsfw"
     all_pool = [None] + HF_TOKENS
 
-    # 1. إذا كان المشهد ناطقاً (Lip-Sync)، نحاول أولاً مساحات تحريك الشفايف بالصوت على Hugging Face
-    if is_lipsync:
-        for space_id in ["Wan-AI/Wan2.1-FLF2V-14B-720P", "multimodalart/wan-2-2-first-last-frame"]:
-            for tok in all_pool[:2]:
-                try:
-                    client = Client(space_id, token=tok, verbose=False)
-                    res = client.predict(
-                        start_image=handle_file(start_img),
-                        end_image=handle_file(start_img),
-                        prompt=full_motion,
-                        negative_prompt=neg_prompt,
-                        duration_seconds=3.2,
-                        steps=4,
-                        guidance_scale=1.0,
-                        guidance_scale_2=1.0,
-                        seed=MASTER_SEED + index,
-                        randomize_seed=False,
-                        api_name="/generate_video"
-                    )
-                    v_path = extract_video_path(res)
-                    if v_path:
-                        shutil.copyfile(v_path, out_raw_video)
-                        print(f"🗣️ Scene {index + 1} Talking Character animated via {space_id}!", flush=True)
-                        return True
-                except Exception:
-                    break
+    if not is_lipsync and next_img and os.path.exists(next_img):
+        for tok in all_pool[:3]:
+            tok_key = "FLF_IP" if tok is None else f"FLF_{tok[:12]}"
+            if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
+                continue
+            try:
+                flf_space = "multimodalart/wan-2-2-first-last-frame"
+                client = Client(flf_space, token=tok, verbose=False)
+                res = client.predict(
+                    start_image=handle_file(start_img),
+                    end_image=handle_file(next_img),
+                    prompt=full_motion,
+                    negative_prompt=neg_prompt,
+                    duration_seconds=3.0,
+                    steps=4,
+                    guidance_scale=1.0,
+                    guidance_scale_2=1.0,
+                    seed=MASTER_SEED + index,
+                    randomize_seed=False,
+                    api_name="/generate_video"
+                )
+                v_path = extract_video_path(res)
+                if v_path:
+                    shutil.copyfile(v_path, out_raw_video)
+                    print(f"🔗 Scene {index + 1} smoothly morphed (Start->End Frame) via {flf_space}!", flush=True)
+                    return True
+            except Exception as e:
+                if is_quota_error(e):
+                    EXHAUSTED_ZEROGPU_TOKENS.add(tok_key)
+                    continue
+                break
 
-    # 2. التحريك عبر Wan 2.2 Faster
     for pool_idx, tok in enumerate(all_pool):
         tok_key = "SERVER_IP" if tok is None else f"TOK_{tok[:12]}"
         if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
@@ -716,59 +556,116 @@ def animate_scene_with_lipsync_or_wan(index, scene, start_img, next_img, audio_f
     return False
 
 
-def build_scene_audio_uncut(seg_idx, scene, uploaded_scene_audio_map, out_wav):
+def vtt_time_to_seconds(t_str):
+    t_str = t_str.strip().replace(",", ".")
+    parts = t_str.split(":")
+    if len(parts) == 3:
+        return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+    elif len(parts) == 2:
+        return float(parts[0]) * 60 + float(parts[1])
+    return 0.0
+
+
+def parse_vtt_into_5word_phrases(vtt_path, fallback_text, total_dur, delay_sec=0.15):
     """
-    يستخدم صوت المستخدم المرفوع (إن وجد) أو يولد الصوت الكامل بدون قطع أي حرف نهائياً!
+    قراءة توقيت الكلمات الحقيقي من ملف الـ VTT الناتج من محرك الصوت
+    وتقسيمها إلى بطاقات من 5 كلمات متزامنة بالمللي ثانية مع صوت المعلق!
     """
-    scene_num = seg_idx + 1
+    phrases = []
+    if os.path.exists(vtt_path):
+        try:
+            content = Path(vtt_path).read_text(encoding="utf-8", errors="ignore")
+            blocks = re.split(r"\n\s*\n", content)
+            for b in blocks:
+                lines = [ln.strip() for ln in b.splitlines() if ln.strip()]
+                time_line = next((ln for ln in lines if "-->" in ln), None)
+                if not time_line:
+                    continue
+                t_parts = time_line.split("-->")
+                st = vtt_time_to_seconds(t_parts[0]) + delay_sec
+                et = vtt_time_to_seconds(t_parts[1].split()[0]) + delay_sec
+                text_lines = [ln for ln in lines if "-->" not in ln and not ln.startswith("WEBVTT") and not ln.isdigit()]
+                cue_text = " ".join(text_lines)
+                clean_words = re.sub(r'["\'«»*():;,.?!—-]', '', cue_text).split()
+                if not clean_words or et <= st:
+                    continue
+
+                chunks = [" ".join(clean_words[i:i + 5]) for i in range(0, len(clean_words), 5)]
+                c_step = (et - st) / len(chunks)
+                for c_i, ch in enumerate(chunks):
+                    c_start = round(st + c_i * c_step, 2)
+                    c_end = round(st + (c_i + 1) * c_step, 2)
+                    phrases.append((ch, c_start, min(c_end, total_dur)))
+        except Exception:
+            pass
+
+    if phrases:
+        return phrases
+
+    clean_words = re.sub(r'["\'«»*():;,.?!—-]', '', fallback_text).split()
+    chunks = [" ".join(clean_words[i:i + 5]) for i in range(0, len(clean_words), 5)] or ["..."]
+    step = total_dur / len(chunks)
+    return [(ch, round(idx * step, 2), round((idx + 1) * step, 2)) for idx, ch in enumerate(chunks)]
+
+
+def build_uncut_crystal_clear_audio(seg_idx, scene, out_wav):
+    """
+    توليد الصوت الوثائقي الواضح بالكامل بدون أي فلتر قص (Zero Silenceremove / Zero Truncation)!
+    - يحول الصوت أولاً إلى WAV غير مضغوط ويقيس طوله الحقيقي بالمللي ثانية.
+    - يضيف 0.80 ثانية راحة في نهاية كل مشهد حتى تُسمع آخر كلمة وآخر نفس بوضوح تام 100%!
+    """
     text = scene["narration"]
     sfx_key = scene["sfx"]
-    raw_voice_path = f"seg_raw_{seg_idx}.wav"
+
+    raw_mp3 = f"seg_raw_{seg_idx}.mp3"
+    raw_vtt = f"seg_sub_{seg_idx}.vtt"
+    clean_voice_wav = f"seg_clean_{seg_idx}.wav"
     sfx_ogg = f"seg_sfx_{seg_idx}.ogg"
 
-    if scene_num in uploaded_scene_audio_map:
-        src_aud = uploaded_scene_audio_map[scene_num]
-        print(f"🎤 Using your uploaded custom voice for Scene {scene_num}: ({src_aud})!", flush=True)
-        subprocess.run([
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-i", src_aud, "-ar", "44100", "-ac", "2", raw_voice_path
-        ], check=True)
-    else:
-        raw_mp3 = f"seg_raw_{seg_idx}.mp3"
-        voice_ok = False
-        for v_name in [ENGLISH_VOICE, "en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural", "en-US-ChristopherNeural"]:
-            try:
-                subprocess.run([
-                    "edge-tts", "--voice", v_name, "--rate=-2%",
-                    "--text", text, "--write-media", raw_mp3
-                ], check=True, timeout=45, stderr=subprocess.DEVNULL)
-                if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
-                    voice_ok = True
-                    break
-            except Exception:
-                time.sleep(0.5)
+    voice_ok = False
+    for v_name in [ENGLISH_VOICE, "en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural", "en-US-ChristopherNeural"]:
+        try:
+            subprocess.run([
+                "edge-tts", "--voice", v_name, "--rate=-2%",
+                "--text", text,
+                "--write-media", raw_mp3,
+                "--write-subtitles", raw_vtt
+            ], check=True, timeout=45, stderr=subprocess.DEVNULL)
+            if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
+                voice_ok = True
+                break
+        except Exception:
+            time.sleep(0.5)
 
-        if not voice_ok:
-            encoded = urllib.parse.quote(text[:450])
-            r = requests.get(f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q={encoded}", timeout=25)
-            with open(raw_mp3, "wb") as f:
-                f.write(r.content)
+    if not voice_ok:
+        encoded = urllib.parse.quote(text[:450])
+        r = requests.get(f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q={encoded}", timeout=25)
+        with open(raw_mp3, "wb") as f:
+            f.write(r.content)
 
-        warm_eq = "highpass=f=75,equalizer=f=180:width_type=o:width=1.5:g=2.4,equalizer=f=3600:width_type=o:width=2.0:g=1.6"
-        subprocess.run([
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-i", raw_mp3,
-            "-af", f"silenceremove=start_periods=1:start_silence=0.05:start_threshold=-45dB,{warm_eq}",
-            "-ar", "44100", "-ac", "2", raw_voice_path
-        ], check=True)
+    # معالجة صوتية استوديو نقية (Warm Studio EQ + Broadcast Compressor) بدون أي silenceremove نهائياً!
+    studio_audio_chain = (
+        "highpass=f=70,"
+        "equalizer=f=165:width_type=o:width=1.5:g=2.4,"
+        "equalizer=f=3500:width_type=o:width=2.0:g=1.8,"
+        "acompressor=threshold=-18dB:ratio=2.2:attack=15:release=180:makeup=1.5"
+    )
+    subprocess.run([
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-i", raw_mp3,
+        "-af", studio_audio_chain,
+        "-ar", "44100", "-ac", "2", clean_voice_wav
+    ], check=True)
 
     probe = subprocess.run([
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1", raw_voice_path
+        "-of", "default=noprint_wrappers=1:nokey=1", clean_voice_wav
     ], capture_output=True, text=True, check=True)
     v_dur = float(probe.stdout.strip() or "18.0")
-    # إضافة 0.65 ثانية بعد انتهاء الصوت لضمان عدم بتر أي حرف نهائياً!
-    final_dur = round(v_dur + 0.65, 2)
+
+    # إضافة 0.80 ثانية كاملة بعد انتهاء آخر حرف في الصوت لضمان عدم بتر أي كلمة نهائياً!
+    final_dur = round(v_dur + 0.80, 2)
+    timed_phrases = parse_vtt_into_5word_phrases(raw_vtt, text, final_dur, delay_sec=0.15)
 
     sfx_url, sfx_vol = SFX_LIBRARY.get(sfx_key, SFX_LIBRARY["waves"])
     try:
@@ -780,26 +677,26 @@ def build_scene_audio_uncut(seg_idx, scene, uploaded_scene_audio_map, out_wav):
                 "ffmpeg", "-y", "-loglevel", "error",
                 "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={final_dur}",
                 "-i", sfx_ogg,
-                "-i", raw_voice_path,
+                "-i", clean_voice_wav,
                 "-filter_complex",
                 f"[1:a]atrim=0:{min(final_dur, 3.0)},afade=t=in:d=0.1,afade=t=out:st={max(min(final_dur, 3.0) - 0.6, 0.2)}:d=0.6,volume={sfx_vol}[s];"
-                f"[2:a]adelay=200|200,apad=pad_dur=0.5,volume=1.35[v];"
+                f"[2:a]adelay=150|150,apad=pad_dur=0.65,volume=1.40[v];"
                 f"[0:a][s][v]amix=inputs=3:duration=first:dropout_transition=0[a]",
                 "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
             ], check=True)
-            return final_dur, raw_voice_path
+            return final_dur, timed_phrases
     except Exception:
         pass
 
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
         "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={final_dur}",
-        "-i", raw_voice_path,
+        "-i", clean_voice_wav,
         "-filter_complex",
-        "[1:a]adelay=200|200,apad=pad_dur=0.5,volume=1.35[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
+        "[1:a]adelay=150|150,apad=pad_dur=0.65,volume=1.40[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
         "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
     ], check=True)
-    return final_dur, raw_voice_path
+    return final_dur, timed_phrases
 
 
 def render_widescreen_subtitle_png(phrase_text, png_path):
@@ -842,10 +739,9 @@ def render_widescreen_subtitle_png(phrase_text, png_path):
     img.save(png_path, "PNG")
 
 
-def build_scene_clip(index, scene, all_scene_imgs, uploaded_scene_audio_map):
-    narration = scene["narration"]
+def build_scene_clip(index, scene, all_scene_imgs):
     audio_file = f"scene_audio_{index}.wav"
-    duration, clean_voice_wav = build_scene_audio_uncut(index, scene, uploaded_scene_audio_map, audio_file)
+    duration, timed_phrases = build_uncut_crystal_clear_audio(index, scene, audio_file)
 
     start_img = all_scene_imgs[index]
     next_img = all_scene_imgs[index + 1] if index + 1 < len(all_scene_imgs) else None
@@ -856,7 +752,7 @@ def build_scene_clip(index, scene, all_scene_imgs, uploaded_scene_audio_map):
     fps = 30
     total_frames = int(round(duration * fps))
 
-    ai_animated = animate_scene_with_lipsync_or_wan(index, scene, start_img, next_img, clean_voice_wav, raw_ai_video)
+    ai_animated = animate_scene_with_lipsync_or_wan(index, scene, start_img, next_img, raw_ai_video)
 
     if ai_animated and os.path.exists(raw_ai_video):
         v_probe = subprocess.run([
@@ -864,37 +760,22 @@ def build_scene_clip(index, scene, all_scene_imgs, uploaded_scene_audio_map):
             "-of", "default=noprint_wrappers=1:nokey=1", raw_ai_video
         ], capture_output=True, text=True, check=True)
         raw_vid_dur = max(float(v_probe.stdout.strip() or "3.0"), 1.0)
+        stretch_factor = round((duration + 0.25) / raw_vid_dur, 3)
 
-        if scene.get("lip_sync"):
-            # في مشاهد المتحدث (Lip-Sync)، نكرر حركة الحديث ذهاباً وإياباً بنعومة (Ping-Pong Speaking Loop)
-            # حتى تظل شفايف المتحدث تتحرك بسرعة طبيعية طوال جملته دون تجميد!
-            subprocess.run([
-                "ffmpeg", "-y", "-loglevel", "error",
-                "-stream_loop", "-1", "-i", raw_ai_video,
-                "-vf", (
-                    f"scale=2112:1188:force_original_aspect_ratio=increase,crop=2112:1188,"
-                    f"crop={VIDEO_W}:{VIDEO_H}:'(iw-{VIDEO_W})/2':'(ih-{VIDEO_H})/2 - 18*(t/{duration})',"
-                    f"cas=0.65,setsar=1,format=yuv420p"
-                ),
-                "-t", str(duration), "-r", str(fps),
-                "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
-            ], check=True)
-        else:
-            stretch_factor = round((duration + 0.25) / raw_vid_dur, 3)
-            subprocess.run([
-                "ffmpeg", "-y", "-loglevel", "error",
-                "-i", raw_ai_video,
-                "-vf", (
-                    f"setpts={stretch_factor}*PTS,"
-                    f"minterpolate=fps={fps}:mi_mode=blend,"
-                    f"tpad=stop_mode=clone:stop_duration=3,"
-                    f"scale=2112:1188:force_original_aspect_ratio=increase,crop=2112:1188,"
-                    f"crop={VIDEO_W}:{VIDEO_H}:'(iw-{VIDEO_W})/2 - 35*(t/{duration})':'(ih-{VIDEO_H})/2 - 20*(t/{duration})',"
-                    f"cas=0.65,setsar=1,format=yuv420p"
-                ),
-                "-t", str(duration), "-r", str(fps),
-                "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
-            ], check=True)
+        subprocess.run([
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-i", raw_ai_video,
+            "-vf", (
+                f"setpts={stretch_factor}*PTS,"
+                f"minterpolate=fps={fps}:mi_mode=blend,"
+                f"tpad=stop_mode=clone:stop_duration=3,"
+                f"scale=2112:1188:force_original_aspect_ratio=increase,crop=2112:1188,"
+                f"crop={VIDEO_W}:{VIDEO_H}:'(iw-{VIDEO_W})/2 - 35*(t/{duration})':'(ih-{VIDEO_H})/2 - 20*(t/{duration})',"
+                f"cas=0.65,setsar=1,format=yuv420p"
+            ),
+            "-t", str(duration), "-r", str(fps),
+            "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
+        ], check=True)
     else:
         subprocess.run([
             "ffmpeg", "-y", "-loglevel", "error",
@@ -907,9 +788,6 @@ def build_scene_clip(index, scene, all_scene_imgs, uploaded_scene_audio_map):
             "-t", str(duration), "-r", str(fps),
             "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
         ], check=True)
-
-    # تحليل توقيت كلمات المشهد عبر Faster-Whisper لمزامنة الكابشن مع الصوت المرفوع بالمللي ثانية
-    timed_phrases = extract_whisper_phrases_for_scene(clean_voice_wav, narration, duration)
 
     inputs_cmd = ["-i", base_video, "-i", audio_file]
     filter_parts = []
@@ -980,14 +858,7 @@ def upload_long_video_to_youtube(video_path, title, refresh_token):
 def assemble_and_publish():
     title = "How The Ancient Romans Built Concrete Stronger Than Modern Buildings (Part 1)"
     uploaded_img_map = discover_uploaded_images_map()
-    single_full_audio, numbered_audios = discover_uploaded_audio_assets()
-
-    print(f"📸 Uploaded Gemini images found: {len(uploaded_img_map)} ({sorted(uploaded_img_map.keys())})", flush=True)
-
-    if not numbered_audios and single_full_audio:
-        numbered_audios = split_full_uploaded_audio_with_whisper(single_full_audio, ROMAN_CONCRETE_SCENES)
-    elif numbered_audios:
-        print(f"🎤 Found {len(numbered_audios)} numbered custom audio files: {sorted(numbered_audios.keys())}", flush=True)
+    print(f"📸 Uploaded Gemini images found in 'images/': {len(uploaded_img_map)} ({sorted(uploaded_img_map.keys())})", flush=True)
 
     all_scene_imgs = []
     for idx, scene in enumerate(ROMAN_CONCRETE_SCENES):
@@ -998,8 +869,8 @@ def assemble_and_publish():
     scene_videos = []
     total_dur = 0.0
     for idx, scene in enumerate(ROMAN_CONCRETE_SCENES):
-        print(f"--- Producing Scene {idx + 1}/15 ---", flush=True)
-        clip, dur = build_scene_clip(idx, scene, all_scene_imgs, numbered_audios)
+        print(f"--- Producing Uncut Scene {idx + 1}/15 ---", flush=True)
+        clip, dur = build_scene_clip(idx, scene, all_scene_imgs)
         scene_videos.append(clip)
         total_dur += dur
 
@@ -1020,7 +891,7 @@ def assemble_and_publish():
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
         "-i", merged_video,
-        "-f", "lavfi", "-i", "anoisesrc=c=pink:a=0.005",
+        "-f", "lavfi", "-i", "anoisesrc=c=pink:a=0.004",
         "-filter_complex",
         "[1:a]lowpass=f=240[bg];[0:a]volume=1.15[fg];[fg][bg]amix=inputs=2:duration=first:dropout_transition=1[a]",
         "-map", "0:v", "-map", "[a]",
