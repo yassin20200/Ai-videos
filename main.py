@@ -14,11 +14,9 @@ from googleapiclient.http import MediaFileUpload
 from gradio_client import Client, handle_file
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 
-print("🚀 Starting Long-Form 16:9 Documentary Studio (Target: 04:35 / 275.0s Exact)...", flush=True)
+print("🚀 Starting Ancient Engineering Documentary Studio (Whisper Audio Sync + Lip-Sync + 16:9 HD)...", flush=True)
 
-TARGET_TOTAL_VIDEO_SECONDS = 275.0  # 4 minutes and 35 seconds exact
-VIDEO_W, VIDEO_H = 1920, 1080       # Horizontal 16:9 Long-Form YouTube format
-
+VIDEO_W, VIDEO_H = 1920, 1080  # Horizontal 16:9 Long-Form YouTube format
 ENGLISH_VOICE = os.getenv("ENGLISH_VOICE", "en-US-AndrewMultilingualNeural").strip() or "en-US-AndrewMultilingualNeural"
 
 BUILTIN_HF_KEYS = [
@@ -52,207 +50,213 @@ YT_CLIENT_SECRET = os.getenv("YT_CLIENT_SECRET", "").strip()
 YT_REFRESH_TOKENS = [t.strip() for t in os.getenv("YT_REFRESH_TOKENS", "").split(",") if t.strip()]
 
 FONT_BOLD_PATH = "Montserrat-ExtraBold.ttf"
-MASTER_SEED = 196206
+MASTER_SEED = 202601
 
 os.environ.pop("HF_TOKEN", None)
 EXHAUSTED_ZEROGPU_TOKENS = set()
 
 SFX_LIBRARY = {
-    "waves": ("https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg", 0.24),
-    "alarm": ("https://actions.google.com/sounds/v1/alarms/beep_short.ogg", 0.25),
-    "scrape": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.24),
-    "thump": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.28),
-    "wind": ("https://actions.google.com/sounds/v1/weather/wind_blowing.ogg", 0.24),
-    "water": ("https://actions.google.com/sounds/v1/water/water_splashing.ogg", 0.25)
+    "waves": ("https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg", 0.20),
+    "crumble": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.24),
+    "fire": ("https://actions.google.com/sounds/v1/weather/wind_blowing.ogg", 0.22),
+    "whoosh": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.22),
+    "water": ("https://actions.google.com/sounds/v1/water/water_splashing.ogg", 0.22)
 }
 
 STYLE_PREFIX = (
-    "Masterpiece stylized 3D cinematic historical thriller render, Unreal Engine 5 studio lighting, "
-    "rich atmospheric textures, dramatic shadows, ultra-crisp 8k horizontal 16:9 widescreen, no text, no watermarks. "
+    "Masterpiece stylized 3D cinematic documentary render, Unreal Engine 5 studio lighting, "
+    "rich textures, ultra-crisp 8k horizontal 16:9 widescreen, no text, no watermarks. "
 )
 
-# 15 فصلاً متكاملاً لقصة الهروب من ألكاتراز 1962 (مصممة لتغطية 4 دقائق و35 ثانية بتشويق مستمر)
-ALCATRAZ_SCENES = [
+ROMAN_CONCRETE_SCENES = [
     {
         "id": 0,
         "sfx": "waves",
+        "lip_sync": True,
         "narration": (
-            "In the middle of the freezing, shark-infested waters of San Francisco Bay sits Alcatraz Island, "
-            "a fortress built on jagged rock that the United States government promised was one hundred percent escape-proof. "
-            "Yet in June of nineteen sixty-two, three men pulled off the most brilliant prison break in human history, "
-            "using nothing but stolen spoons, raincoats, and painted dummy heads."
+            "Look at modern concrete skyscrapers, bridges, and highways built with the most advanced technology of the twenty-first century. "
+            "Within just fifty to eighty years, steel-reinforced modern concrete begins to crack, rust, and crumble into dust. "
+            "Yet across the Mediterranean Sea, massive Roman harbors built two thousand years ago are still standing completely intact, "
+            "battered by violent ocean waves every single day, and somehow growing stronger every century."
         ),
-        "image_prompt": f"{STYLE_PREFIX}Alcatraz Island prison at night in 1962 sitting on a jagged rock in stormy ocean waves while a yellow searchlight sweeps from the guard tower.",
-        "motion_prompt": "Cinematic 3D widescreen animation, stormy ocean waves crash against Alcatraz island at night as the yellow searchlight beam sweeps through the mist"
+        "image_prompt": f"{STYLE_PREFIX}A wise Roman master architect in a toga facing the camera directly ready to speak, between a cracked modern bridge and an intact Roman harbor.",
+        "motion_prompt": "Natural 3D character speaking directly to the camera with expressive lip movement, subtle head nods, and natural breathing"
     },
     {
         "id": 1,
-        "sfx": "alarm",
+        "sfx": "whoosh",
+        "lip_sync": False,
         "narration": (
-            "On the morning of June twelfth, nineteen sixty-two, the loud metallic clanging of the morning bell echoed through Cellblock B. "
-            "Every prisoner stood up for the routine headcount, except for three men who appeared to be fast asleep under their blankets. "
-            "When a guard reached through the iron bars and shoved the pillow of inmate Frank Morris, "
-            "the prisoner's head rolled right off the bed and crashed onto the concrete floor."
+            "To understand this ancient mystery, travel to the heart of Rome and step inside the Pantheon, built nearly two millennia ago. "
+            "Above your head hangs the largest unreinforced concrete dome on the planet, spanning one hundred and forty-two feet across open air. "
+            "There is not a single rod of steel inside that dome. If modern engineers poured a dome of that exact size using standard modern concrete without steel today, "
+            "it would collapse under its own weight the moment the scaffolding was removed."
         ),
-        "image_prompt": f"{STYLE_PREFIX}Inside a dim 1962 Alcatraz prison cell at dawn, a guard reaches through the bars and a painted dummy head with real hair rolls off the pillow onto the floor.",
-        "motion_prompt": "Suspenseful 3D animation, the uniformed prison guard steps back in shock as the painted dummy head lies on the concrete cell floor"
+        "image_prompt": f"{STYLE_PREFIX}Wide interior shot of the Roman Pantheon dome with a golden sunbeam shining down through the oculus.",
+        "motion_prompt": "Majestic 3D camera pan inside the Roman Pantheon as golden dust motes float in the sunbeam shining through the dome oculus"
     },
     {
         "id": 2,
-        "sfx": "thump",
+        "sfx": "crumble",
+        "lip_sync": False,
         "narration": (
-            "The mastermind behind this audacious plot was Frank Lee Morris, a career criminal with a genius-level IQ of one hundred and thirty-three "
-            "who had already escaped from multiple prisons across the country. "
-            "From the very first hour Morris arrived on Alcatraz in January nineteen sixty, he didn't look for ways to survive his sentence; "
-            "he immediately began searching for a structural weakness in the fortress."
+            "Why does modern concrete fail so quickly compared to Roman structures? "
+            "Modern Portland cement is designed for speed and mass production, mixed smoothly with sand, gravel, and water to harden fast. "
+            "When salt water seeps into microscopic pores inside modern concrete, it attacks the internal steel bars. "
+            "The rusting steel expands up to six times its original volume, exploding the surrounding concrete from the inside out."
         ),
-        "image_prompt": f"{STYLE_PREFIX}Frank Morris kneeling beneath a rusty metal sink inside his concrete prison cell, shining a tiny match light at a small metal air vent grille near the floor.",
-        "motion_prompt": "3D cinematic animation, the warm match flame flickers in the dim prison cell as the prisoner examines the metal air vent under the sink"
+        "image_prompt": f"{STYLE_PREFIX}3D cutaway cross-section of a modern concrete pillar underwater with rusting internal steel rebar cracking the concrete.",
+        "motion_prompt": "3D engineering cutaway animation, orange rust spreads on the internal steel bars as cracks form across the grey concrete pillar"
     },
     {
         "id": 3,
-        "sfx": "scrape",
+        "sfx": "waves",
+        "lip_sync": False,
         "narration": (
-            "Morris noticed a tiny detail that the prison architects had overlooked for decades. "
-            "Constant exposure to the damp, salty ocean air blowing in from San Francisco Bay had slowly eaten away at the concrete walls. "
-            "Down beneath his cell sink sat a small metal air vent, just four inches high and eight inches wide, "
-            "surrounded by crumbling, salt-damaged mortar that could be chipped away."
+            "In stark contrast, ancient Roman marine concrete did not fear the ocean; it actually needed seawater to reach its ultimate strength. "
+            "Two thousand years ago, Roman emperors constructed gigantic artificial harbors at Caesarea and Pozzuoli by pouring thousands of tons of concrete directly into the open sea. "
+            "Today, marine geologists testing those submerged Roman piers have discovered that they are significantly harder now than the day they were poured."
         ),
-        "image_prompt": f"{STYLE_PREFIX}Macro close-up of a prisoner's hand holding a stolen metal dining spoon scraping away crumbling grey concrete around a small iron ventilation grille.",
-        "motion_prompt": "Close-up 3D animation, the metal spoon scrapes against the crumbling concrete wall as dust particles fall slowly to the floor"
+        "image_prompt": f"{STYLE_PREFIX}Split underwater and surface shot of an ancient Roman harbor with wooden ships above and a massive submerged concrete pier below.",
+        "motion_prompt": "3D underwater cinematic animation, blue ocean waves ripple against the ancient submerged Roman concrete pier"
     },
     {
         "id": 4,
-        "sfx": "wind",
+        "sfx": "fire",
+        "lip_sync": False,
         "narration": (
-            "Knowing a job this complex required a team, Morris quietly recruited three inmates occupying adjacent cells: "
-            "brothers John and Clarence Anglin, who were expert swimmers, and Allen West, who worked on the prison maintenance crew. "
-            "Every afternoon in the windy prison yard, the four men stood together whispering blueprints, "
-            "assigning tasks, and smuggling tiny tools back into their cells."
+            "For centuries, historians assumed the Romans just got lucky with their raw materials. "
+            "But in the first century AD, the Roman author Pliny the Elder wrote a cryptic clue in his encyclopedia of natural history. "
+            "He described how volcanic ash from the Gulf of Naples, mixed with limestone and seawater, transformed into a single stone mass, "
+            "impenetrable to the waves and growing stronger every day it remained underwater."
         ),
-        "image_prompt": f"{STYLE_PREFIX}Four prisoners in 1962 denim jackets huddled together in a corner of the misty Alcatraz prison yard whispering while armed guards watch from a high walkway.",
-        "motion_prompt": "3D cinematic animation, mist drifts across the prison yard as the four inmates whisper together cautiously while guards patrol above"
+        "image_prompt": f"{STYLE_PREFIX}Pliny the Elder writing on a parchment scroll by candlelight with Mount Vesuvius glowing through an arched window behind him.",
+        "motion_prompt": "3D atmospheric animation, candlelight flickers over the parchment scroll while volcanic smoke rises from Mount Vesuvius in the distance"
     },
     {
         "id": 5,
-        "sfx": "scrape",
+        "sfx": "fire",
+        "lip_sync": True,
         "narration": (
-            "Digging through solid concrete with stolen dining spoons and discarded saw blades was agonizingly slow, "
-            "and a single suspicious sound would send them straight to solitary confinement. "
-            "So the men timed their heavy digging to coincide with the daily prison music hour. "
-            "While Frank Morris stood at the front of his cell loudly playing an accordion, "
-            "his partners behind the walls used a makeshift drill built from a stolen vacuum cleaner motor."
+            "We did not build for a single generation; we built for eternity. "
+            "Our secret began in the shadow of Mount Vesuvius, where we harvested special volcanic ash called pozzolana, rich in silica and alumina. "
+            "When we mixed that volcanic ash with roasted limestone and dropped it into wooden molds beneath the sea, "
+            "we triggered a chemical reaction that modern builders completely forgot."
         ),
-        "image_prompt": f"{STYLE_PREFIX}Inside the cellblock, a prisoner plays an accordion by the cell bars while behind him in the shadows another prisoner uses a makeshift drill on the wall.",
-        "motion_prompt": "3D dramatic animation, the prisoner plays the accordion by the bars while sparks and dust fly from the hidden wall hole in the shadows"
+        "image_prompt": f"{STYLE_PREFIX}The Roman master engineer facing the camera directly ready to speak, holding a bowl of volcanic ash in front of glowing lime kilns.",
+        "motion_prompt": "Natural 3D character speaking directly to the camera with realistic lip sync and hand gestures while fire glows in the background"
     },
     {
         "id": 6,
-        "sfx": "thump",
+        "sfx": "whoosh",
+        "lip_sync": False,
         "narration": (
-            "To hide the growing gaping holes in their walls during surprise daytime cell inspections, "
-            "the prisoners crafted fake ventilation grilles out of stiff cardboard painted with dark grey soap and dust. "
-            "After nearly a full year of relentless nighttime scraping, the men finally broke through into an unguarded, pitch-black utility corridor "
-            "running directly behind the cellblock, filled with massive vertical water and sewage pipes."
+            "When twentieth-century scientists finally placed ancient Roman concrete under high-powered electron microscopes, they noticed something bizarre. "
+            "Scattered throughout the grey Roman mortar were thousands of tiny, bright white mineral chunks, just a few millimeters wide, known as lime clasts. "
+            "For decades, modern engineers dismissed these white chunks as sloppy, careless mixing by ancient workers who failed to stir their mortar properly."
         ),
-        "image_prompt": f"{STYLE_PREFIX}Frank Morris squeezing through the jagged hole behind his cell sink into a dark secret utility corridor filled with huge vertical rusty iron pipes.",
-        "motion_prompt": "3D suspense animation, the prisoner crawls into the narrow dark pipe corridor as dust motes float in a dim shaft of light"
+        "image_prompt": f"{STYLE_PREFIX}Macro 3D view of a slice of ancient Roman concrete under a microscope showing bright white mineral chunks scattered in grey stone.",
+        "motion_prompt": "Smooth 3D macro camera push-in focusing on the glowing white mineral lime clasts embedded inside the ancient grey concrete"
     },
     {
         "id": 7,
-        "sfx": "wind",
+        "sfx": "whoosh",
+        "lip_sync": False,
         "narration": (
-            "At night, after the guards locked down the tiers, Morris and the Anglin brothers climbed thirty feet up those rusty iron pipes "
-            "to the flat, empty top of the cellblock roof, thirty feet above the floor. "
-            "Up there in the dark shadows, hidden behind hanging blankets, they established a secret midnight workshop. "
-            "Over the course of months, they collected over fifty rubber raincoats stolen from prison laundry bins."
+            "Calling the Romans sloppy made no sense at all. The Romans were the most disciplined, meticulous engineers of the ancient world, "
+            "spending years perfecting every recipe before building an aqueduct or a harbor. "
+            "Recently, a team of researchers at MIT looked closer at those tiny white chunks using advanced X-ray imaging, "
+            "and realized those white flecks were not a mistake. They were the secret weapon."
         ),
-        "image_prompt": f"{STYLE_PREFIX}Three prisoners crouching under hanging blankets on top of the dark cellblock roof, stitching together fifty yellow-and-black rubber raincoats into a raft.",
-        "motion_prompt": "3D cinematic animation, the three prisoners work under a dim hanging light stitching yellow rubber raincoats into a large raft"
+        "image_prompt": f"{STYLE_PREFIX}Scientists in a high-tech lab examining a chunk of Roman concrete under a glowing cyan X-ray laser scanner.",
+        "motion_prompt": "3D laboratory animation, a glowing cyan X-ray laser beam scans across the Roman concrete sample highlighting the white pockets"
     },
     {
         "id": 8,
-        "sfx": "scrape",
+        "sfx": "fire",
+        "lip_sync": False,
         "narration": (
-            "Getting off the prison rock was only half the battle; swimming over a mile through forty-eight-degree water with strong currents was suicide. "
-            "Using sewing needles and heavy thread, the inmates stitched the fifty raincoats into a fourteen-foot-long inflatable rubber raft. "
-            "Then, using a brilliant piece of prison engineering, they pressed the rubber seams against scalding-hot steam pipes in the corridor "
-            "to melt and vulcanize the rubber until it was completely airtight."
+            "Instead of mixing their concrete cold with water the way modern construction crews do, the ancient Romans used a dangerous process called hot mixing. "
+            "They combined reactive quicklime, burnt limestone powder, directly with volcanic ash and water. "
+            "This triggered a violent exothermic chemical reaction, heating the entire concrete mixture to over two hundred degrees Celsius, "
+            "boiling and fusing the minerals together."
         ),
-        "image_prompt": f"{STYLE_PREFIX}Close-up shot in the secret corridor: prisoners pressing the seams of the yellow rubber raincoat raft against a hot white steam pipe to seal it airtight.",
-        "motion_prompt": "3D engineering animation, white steam rises gently as the rubber raft seams are pressed against the hot metal pipe"
+        "image_prompt": f"{STYLE_PREFIX}Roman workers pouring white quicklime and volcanic ash into a wooden trough with boiling steam and glowing orange heat.",
+        "motion_prompt": "3D dramatic animation, thick white steam and glowing orange heat rise from the boiling Roman mortar mix"
     },
     {
         "id": 9,
-        "sfx": "thump",
+        "sfx": "crumble",
+        "lip_sync": False,
         "narration": (
-            "To inflate their raft quickly on the beach without running out of breath, they modified a broken wooden concertina musical instrument "
-            "to work as a high-volume air bellows, and carved sturdy paddles out of scrap plywood. "
-            "Meanwhile, to buy themselves nine crucial hours of head start before the morning count, "
-            "they sculpted remarkably lifelike dummy heads out of soap, toilet paper, and concrete dust, topped with real hair from the barbershop."
+            "Because of that intense two-hundred-degree heat inside the Roman mixer, tiny pockets of calcium did not dissolve. "
+            "Instead, they baked into brittle, porous white spheres trapped inside the hardening stone wall, "
+            "like millions of microscopic medicine capsules waiting to be activated centuries in the future."
         ),
-        "image_prompt": f"{STYLE_PREFIX}Close-up on a dim prison table showing three lifelike sculpted dummy heads made of soap and paper, painted with flesh tones and real human hair.",
-        "motion_prompt": "Slow 3D camera push-in across the three eerie lifelike painted dummy heads sitting on the wooden prison table"
+        "image_prompt": f"{STYLE_PREFIX}3D X-ray cutaway inside the Roman concrete wall showing bright white spherical calcium pockets locked inside the stone.",
+        "motion_prompt": "3D scientific cutaway animation, glowing white spherical calcium capsules pulse gently inside the dark stone matrix"
     },
     {
         "id": 10,
-        "sfx": "alarm",
+        "sfx": "whoosh",
+        "lip_sync": True,
         "narration": (
-            "On the night of June eleventh, nineteen sixty-two, everything was finally ready. "
-            "Right after lights out at nine-thirty PM, the men placed the dummy heads onto their pillows and stuffed rolled-up clothes under the blankets. "
-            "Morris and the two Anglin brothers crawled into the dark corridor, but disaster struck Allen West: "
-            "the quick-drying cement he used to hold his fake grille had hardened too much, trapping him inside his cell as the others moved on."
+            "When we tested this Roman recipe in the laboratory, we were stunned by what happened next. "
+            "These tiny white lime clasts act as an automatic self-healing system trapped inside the wall. "
+            "The moment a tiny crack forms in the concrete, rainwater or seawater seeps into the crack and hits one of those ancient calcium pockets."
         ),
-        "image_prompt": f"{STYLE_PREFIX}Inside the dark prison cell at night, a lifelike dummy head rests under the blanket on the bed while Frank Morris slips through the hole under the sink.",
-        "motion_prompt": "Tense 3D night animation, moonlight shines through the cell bars onto the dummy head in bed as the prisoner vanishes into the wall hole"
+        "image_prompt": f"{STYLE_PREFIX}A modern materials scientist in a white lab coat facing the camera directly ready to speak, holding a Roman concrete sample.",
+        "motion_prompt": "Natural 3D scientist character speaking directly to the camera with accurate lip movement and natural facial expressions"
     },
     {
         "id": 11,
-        "sfx": "wind",
+        "sfx": "water",
+        "lip_sync": False,
         "narration": (
-            "Climbing up the vertical ventilation shaft in the darkness, Morris and the Anglin brothers pried open the heavy iron fanilator on the roof "
-            "using a homemade crowbar, popping the rivets with a loud metallic snap that somehow went unnoticed by the guards. "
-            "Clutching their heavy bundle of raincoats and wooden paddles, they crept across the high cellhouse roof, "
-            "dropping flat into the shadows every time the blinding guard tower searchlight swept past."
+            "The instant water touches that trapped white lime clast, the calcium dissolves and flows directly into the open fracture. "
+            "As it reacts with volcanic ash along the edges of the crack, it rapidly recrystallizes into solid calcium carbonate and a rare mineral called Al-tobermorite, "
+            "sealing the crack shut from the inside before it can ever spread."
         ),
-        "image_prompt": f"{STYLE_PREFIX}Three prisoners crouching low on the high wind-swept roof of Alcatraz at night carrying their folded raft as a bright yellow searchlight sweeps past.",
-        "motion_prompt": "3D thriller animation, the golden searchlight beam sweeps across the wet rooftop as the three prisoners crouch in the dark shadows"
+        "image_prompt": f"{STYLE_PREFIX}Macro 3D cutaway of water hitting a white calcium sphere inside a concrete crack and crystallizing to seal the crack shut.",
+        "motion_prompt": "3D microscopic animation, glowing white calcium crystals grow and seal the dark crack inside the concrete wall"
     },
     {
         "id": 12,
-        "sfx": "waves",
+        "sfx": "water",
+        "lip_sync": False,
         "narration": (
-            "Sliding fifty feet down a cast-iron kitchen exhaust pipe on the north side of the building, "
-            "the three men climbed over two twelve-foot barbed-wire fences and reached the dark, rocky shoreline on the northeast corner of the island. "
-            "Working in total silence in the blind spot of the searchlight, they pumped the wooden concertina bellows, "
-            "inflating their fourteen-foot raincoat raft as icy waves crashed against their ankles."
+            "To prove this wasn't just a theory, the MIT scientists mixed two batches of concrete: one using the modern recipe, and one using the ancient Roman hot-mixing formula. "
+            "They intentionally cracked both blocks down the middle and ran a slow stream of water through them. "
+            "The modern concrete stayed broken and leaked continuously, while the Roman block completely healed its own cracks within just fourteen days."
         ),
-        "image_prompt": f"{STYLE_PREFIX}At the rocky water's edge of Alcatraz at night, the three prisoners frantically inflate their yellow raincoat raft as dark ocean waves crash around them.",
-        "motion_prompt": "3D action animation, dark ocean waves splash against the rocks as the three men pump the yellow raft at the water's edge"
+        "image_prompt": f"{STYLE_PREFIX}Side-by-side lab test showing a leaking cracked modern concrete block on the left and a sealed self-healed Roman concrete block on the right.",
+        "motion_prompt": "3D laboratory comparison animation, water leaks from the left block while the right Roman block remains completely sealed"
     },
     {
         "id": 13,
-        "sfx": "water",
+        "sfx": "waves",
+        "lip_sync": False,
         "narration": (
-            "Around ten PM, Frank Morris, John Anglin, and Clarence Anglin pushed off from the rocks into the freezing black waters of San Francisco Bay. "
-            "Using their homemade plywood paddles, they vanished into the thick, swirling silver fog heading north toward Angel Island, "
-            "two miles away. By the time Allen West finally chipped his cell vent open and reached the roof hours later, "
-            "his partners were long gone into the night."
+            "Today, producing modern cement accounts for nearly eight percent of all global carbon dioxide emissions, "
+            "largely because modern structures have to be torn down and rebuilt every few decades. "
+            "By reviving this lost two-thousand-year-old Roman formula, modern engineers are now beginning to pour new seawalls and bridges "
+            "that can heal their own fractures and last for centuries."
         ),
-        "image_prompt": f"{STYLE_PREFIX}The three men paddling their makeshift raincoat raft into thick silver fog across the dark choppy waters of San Francisco Bay toward distant city lights.",
-        "motion_prompt": "Epic 3D atmospheric animation, the raincoat raft glides into the swirling silver fog over dark rippling waves toward the distant horizon"
+        "image_prompt": f"{STYLE_PREFIX}A massive modern coastal seawall and bridge against ocean waves with a glowing structural blueprint overlay.",
+        "motion_prompt": "3D cinematic camera glide along the massive coastal seawall as ocean waves crash against it harmlessly"
     },
     {
         "id": 14,
-        "sfx": "waves",
+        "sfx": "whoosh",
+        "lip_sync": True,
         "narration": (
-            "The next morning, the largest manhunt in FBI history was launched across the bay. "
-            "Searchers found a single wooden paddle floating near Angel Island and a waterproof plastic bag containing the Anglin brothers' family photos, "
-            "but no bodies ever washed ashore. Nine months later, Alcatraz was shut down forever, "
-            "and to this day, the mystery remains unsolved: did they drown in the bay, or did three men with spoons beat the impossible?"
+            "Two thousand years ago, without computers, without electron microscopes, and without steel reinforcement, "
+            "Roman builders mastered a level of chemical engineering that outlasted empires. "
+            "And Roman concrete is only the first chapter. In Part Two, we dive to the bottom of the Aegean Sea "
+            "to uncover a two-thousand-year-old geared bronze computer that shouldn't exist."
         ),
-        "image_prompt": f"{STYLE_PREFIX}At dawn on the foggy shore of Angel Island, two 1962 FBI agents in trench coats hold a washed-up wooden paddle, staring out at the empty misty bay.",
-        "motion_prompt": "Cinematic 3D closing shot, morning mist drifts over the calm bay waters as the two FBI agents stand on the rocky shore"
+        "image_prompt": f"{STYLE_PREFIX}The narrator facing the camera directly at sunset with the Roman Pantheon on one side and a glowing bronze geared mechanism on the other.",
+        "motion_prompt": "Natural 3D narrator speaking directly to the camera with realistic lip sync as golden sunset light shines behind him"
     }
 ]
 
@@ -325,6 +329,19 @@ class PinnedSpace:
         Path(dst).write_bytes(content)
 
 
+def ensure_faster_whisper():
+    try:
+        import faster_whisper  # noqa: F401
+        return True
+    except ImportError:
+        print("📦 Installing faster-whisper for precision audio analysis & word timestamps...", flush=True)
+        try:
+            subprocess.run(["pip", "install", "-q", "faster-whisper"], check=True)
+            return True
+        except Exception:
+            return False
+
+
 def ensure_english_font():
     if os.path.exists(FONT_BOLD_PATH) and os.path.getsize(FONT_BOLD_PATH) > 10000:
         return FONT_BOLD_PATH
@@ -341,7 +358,6 @@ def ensure_english_font():
 
 
 def discover_uploaded_images_map():
-    """فحص فولدر images أولاً ثم scenes ثم المجلد الرئيسي"""
     valid_exts = (".jpg", ".jpeg", ".png", ".webp", ".jfif")
     ignore_prefixes = ("scene_", "stage_", "temp_", "sub_", "base_", "raw_", "stretched_", "nuclear_")
     raw_num_map = {}
@@ -367,15 +383,162 @@ def discover_uploaded_images_map():
     return raw_num_map
 
 
+def discover_uploaded_audio_assets():
+    """
+    البحث الذكي عن الصوت الذي رفعه المستخدم في فولدر images أو المجلد الرئيسي:
+    - يدعم رفع ملف صوتي واحد كامل (مثل voice.mp3 أو audio.mp3) ويقسمه تلقائياً عبر Whisper!
+    - أو يدعم رفع ملفات مقسمة (1.mp3, 2.mp3 ... 15.mp3)!
+    """
+    audio_exts = (".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac")
+    ignore_prefixes = ("seg_", "scene_", "stage_", "raw_", "master_", "temp_")
+    numbered_audios = {}
+    single_full_audio = None
+
+    for root_dir in ["images", "scenes", "."]:
+        if not os.path.exists(root_dir):
+            continue
+        for fname in os.listdir(root_dir):
+            low = fname.lower()
+            if low.endswith(audio_exts) and not low.startswith(ignore_prefixes):
+                full_p = os.path.join(root_dir, fname)
+                if os.path.isfile(full_p) and os.path.getsize(full_p) > 5000:
+                    trans = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+                    normalized = fname.translate(trans)
+                    nums = re.findall(r"\d+", normalized)
+                    if nums and int(nums[0]) <= 30 and not any(k in low for k in ("voice", "full", "master", "audio")):
+                        idx_num = int(nums[0])
+                        if idx_num not in numbered_audios:
+                            numbered_audios[idx_num] = full_p
+                    else:
+                        if single_full_audio is None or os.path.getsize(full_p) > os.path.getsize(single_full_audio):
+                            single_full_audio = full_p
+
+    return single_full_audio, numbered_audios
+
+
+def split_full_uploaded_audio_with_whisper(full_audio_path, scenes):
+    """
+    تحليل ملف الصوت الكامل المرفوع من المستخدم عبر Faster-Whisper
+    واستخراج بداية ونهاية كل مشهد بالمللي ثانية بدون قطع أي كلمة!
+    """
+    print(f"🎧 Analyzing your uploaded master audio ({full_audio_path}) with Faster-Whisper AI...", flush=True)
+    probe = subprocess.run([
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", full_audio_path
+    ], capture_output=True, text=True, check=True)
+    total_audio_dur = float(probe.stdout.strip() or "330.0")
+
+    scene_Slices = []
+    if ensure_faster_whisper():
+        try:
+            from faster_whisper import WhisperModel
+            model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
+            segments, _ = model.transcribe(full_audio_path, word_timestamps=True)
+            all_words = []
+            for seg in segments:
+                for w in (seg.words or []):
+                    clean_w = re.sub(r"[^a-z0-9]", "", w.word.lower())
+                    if clean_w:
+                        all_words.append({"word": clean_w, "start": w.start, "end": w.end})
+
+            if len(all_words) > 30:
+                # مطابقة عدد كلمات كل مشهد مع الكلمات المنطوقة في ملف الصوت المرفوع
+                scene_word_counts = [len(re.findall(r"[a-zA-Z0-9]+", s["narration"])) for s in scenes]
+                total_script_words = max(sum(scene_word_counts), 1)
+                curr_w_idx = 0
+                prev_cut_time = 0.0
+
+                for s_i, w_count in enumerate(scene_word_counts):
+                    if s_i == len(scenes) - 1:
+                        end_time = total_audio_dur
+                    else:
+                        ratio = sum(scene_word_counts[:s_i + 1]) / total_script_words
+                        est_idx = min(int(round(ratio * len(all_words))) - 1, len(all_words) - 2)
+                        # البحث عن أقرب وقفة طبيعية بين الجمل حول الكلمة المتوقعة
+                        best_idx = est_idx
+                        best_gap = -1.0
+                        search_start = max(curr_w_idx + 5, est_idx - 10)
+                        search_end = min(len(all_words) - 2, est_idx + 10)
+                        for k in range(search_start, search_end + 1):
+                            gap = all_words[k + 1]["start"] - all_words[k]["end"]
+                            if gap > best_gap:
+                                best_gap = gap
+                                best_idx = k
+                        end_time = round((all_words[best_idx]["end"] + all_words[best_idx + 1]["start"]) / 2.0, 2)
+                        curr_w_idx = best_idx + 1
+
+                    scene_Slices.append((prev_cut_time, max(end_time, prev_cut_time + 3.0)))
+                    prev_cut_time = end_time
+
+                print("✅ Faster-Whisper aligned all 15 scenes to your uploaded voiceover with millisecond precision!", flush=True)
+        except Exception as e:
+            print(f"⚠️ Whisper fallback to proportional timing: {e}", flush=True)
+
+    if not scene_Slices:
+        weights = [len(s["narration"]) for s in scenes]
+        total_w = sum(weights)
+        acc = 0.0
+        for s_i, w in enumerate(weights):
+            st = round((acc / total_w) * total_audio_dur, 2)
+            acc += w
+            et = total_audio_dur if s_i == len(scenes) - 1 else round((acc / total_w) * total_audio_dur, 2)
+            scene_Slices.append((st, et))
+
+    sliced_files = {}
+    for s_i, (st, et) in enumerate(scene_Slices):
+        dst_wav = f"user_slice_{s_i}.wav"
+        dur = round(et - st, 2)
+        subprocess.run([
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-ss", str(st), "-t", str(dur),
+            "-i", full_audio_path,
+            "-ar", "44100", "-ac", "2", dst_wav
+        ], check=True)
+        sliced_files[s_i + 1] = dst_wav
+
+    return sliced_files
+
+
+def extract_whisper_phrases_for_scene(audio_wav, fallback_text, duration):
+    """
+    استخراج عبارات الكابشن المتزامنة بالمللي ثانية مع صوت المستخدم عبر Faster-Whisper
+    """
+    if ensure_faster_whisper():
+        try:
+            from faster_whisper import WhisperModel
+            model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
+            segments, _ = model.transcribe(audio_wav, word_timestamps=True)
+            words = []
+            for seg in segments:
+                for w in (seg.words or []):
+                    cleaned = re.sub(r'["\'«»*():;,.?!—-]', '', w.word).strip()
+                    if cleaned:
+                        words.append({"text": cleaned, "start": max(0.0, w.start), "end": min(duration, w.end)})
+            if len(words) >= 4:
+                phrases = []
+                for i in range(0, len(words), 5):
+                    chunk = words[i:i + 5]
+                    p_text = " ".join(c["text"] for c in chunk)
+                    p_start = round(chunk[0]["start"], 2)
+                    p_end = round(chunk[-1]["end"] + 0.15, 2)
+                    phrases.append((p_text, p_start, min(p_end, duration)))
+                return phrases
+        except Exception:
+            pass
+
+    clean_words = re.sub(r'["\'«»*():;,.?!—-]', '', fallback_text).split()
+    chunks = [" ".join(clean_words[i:i + 5]) for i in range(0, len(clean_words), 5)] or ["..."]
+    step = duration / len(chunks)
+    return [(ch, round(idx * step, 2), round((idx + 1) * step, 2)) for idx, ch in enumerate(chunks)]
+
+
 def save_clean_widescreen_image(src_path, dst_file):
-    """حفظ الصورة بمقاس الفيديو الطويل العرضي 16:9 (1920x1080) مع الحفاظ على التناسب"""
     img = Image.open(src_path).convert("RGB")
     src_w, src_h = img.size
     target_ratio = VIDEO_W / VIDEO_H
     src_ratio = src_w / src_h
 
     if abs(src_ratio - target_ratio) > 0.25:
-        # إذا كانت الصورة طولية، نصنع خلفية ضبابية سينمائية 1920x1080 ونضع الصورة في المنتصف
         bg = img.resize((VIDEO_W, VIDEO_H), Image.Resampling.LANCZOS).filter(ImageFilter.GaussianBlur(28))
         bg = ImageEnhance.Brightness(bg).enhance(0.55)
         new_h = VIDEO_H
@@ -438,7 +601,6 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
                     img_path = img_path["path"]
                 if isinstance(img_path, str) and os.path.exists(img_path):
                     save_clean_widescreen_image(img_path, dst_jpg)
-                    print(f"✨ Generated 16:9 image for Scene {scene_num} via {space_name}!", flush=True)
                     return
             except Exception as e:
                 if is_quota_error(e):
@@ -467,43 +629,48 @@ def extract_video_path(result):
     return None
 
 
-def animate_scene_smoothly(index, start_img, next_img, motion_prompt, out_raw_video):
-    full_motion = f"{motion_prompt}, smooth continuous 3D cinematic documentary animation, high quality, keep characters consistent"
+def animate_scene_with_lipsync_or_wan(index, scene, start_img, next_img, audio_file, out_raw_video):
+    """
+    يدعم تحريك الشفايف (Audio-Driven Lip-Sync) للمشاهد الناطقة + التحريك السينمائي المستمر Wan 2.2
+    """
+    motion_prompt = scene["motion_prompt"]
+    is_lipsync = scene.get("lip_sync", False)
+    full_motion = (
+        f"{motion_prompt}, realistic lip movement synchronized with speech, expressive talking face, high quality 3D"
+        if is_lipsync else
+        f"{motion_prompt}, smooth continuous 3D cinematic documentary animation, high quality"
+    )
     neg_prompt = "morphing, deforming, melting, warping, blurry, low quality, worst quality, text, watermark, nsfw"
     all_pool = [None] + HF_TOKENS
 
-    if next_img and os.path.exists(next_img):
-        for pool_idx, tok in enumerate(all_pool[:4]):
-            tok_key = "FLF_IP" if tok is None else f"FLF_{tok[:12]}"
-            if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
-                continue
-            try:
-                flf_space = "multimodalart/wan-2-2-first-last-frame"
-                client = Client(flf_space, token=tok, verbose=False)
-                res = client.predict(
-                    start_image=handle_file(start_img),
-                    end_image=handle_file(next_img),
-                    prompt=full_motion,
-                    negative_prompt=neg_prompt,
-                    duration_seconds=3.0,
-                    steps=4,
-                    guidance_scale=1.0,
-                    guidance_scale_2=1.0,
-                    seed=MASTER_SEED + index,
-                    randomize_seed=False,
-                    api_name="/generate_video"
-                )
-                v_path = extract_video_path(res)
-                if v_path:
-                    shutil.copyfile(v_path, out_raw_video)
-                    print(f"🔗 Scene {index + 1} smoothly morphed (Start->End Frame) via {flf_space}!", flush=True)
-                    return True
-            except Exception as e:
-                if is_quota_error(e):
-                    EXHAUSTED_ZEROGPU_TOKENS.add(tok_key)
-                    continue
-                break
+    # 1. إذا كان المشهد ناطقاً (Lip-Sync)، نحاول أولاً مساحات تحريك الشفايف بالصوت على Hugging Face
+    if is_lipsync:
+        for space_id in ["Wan-AI/Wan2.1-FLF2V-14B-720P", "multimodalart/wan-2-2-first-last-frame"]:
+            for tok in all_pool[:2]:
+                try:
+                    client = Client(space_id, token=tok, verbose=False)
+                    res = client.predict(
+                        start_image=handle_file(start_img),
+                        end_image=handle_file(start_img),
+                        prompt=full_motion,
+                        negative_prompt=neg_prompt,
+                        duration_seconds=3.2,
+                        steps=4,
+                        guidance_scale=1.0,
+                        guidance_scale_2=1.0,
+                        seed=MASTER_SEED + index,
+                        randomize_seed=False,
+                        api_name="/generate_video"
+                    )
+                    v_path = extract_video_path(res)
+                    if v_path:
+                        shutil.copyfile(v_path, out_raw_video)
+                        print(f"🗣️ Scene {index + 1} Talking Character animated via {space_id}!", flush=True)
+                        return True
+                except Exception:
+                    break
 
+    # 2. التحريك عبر Wan 2.2 Faster
     for pool_idx, tok in enumerate(all_pool):
         tok_key = "SERVER_IP" if tok is None else f"TOK_{tok[:12]}"
         if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
@@ -511,7 +678,7 @@ def animate_scene_smoothly(index, start_img, next_img, motion_prompt, out_raw_vi
         label = "Free Server IP" if tok is None else f"HF Token #{pool_idx} ({tok[:10]}...)"
         try:
             wan_space = "zerogpu-aoti/wan2-2-fp8da-aoti-faster"
-            print(f"🎬 Animating Scene {index + 1} via ({wan_space} - {label})...", flush=True)
+            print(f"🎬 Animating Scene {index + 1} ({'Lip-Sync Speaking' if is_lipsync else '3D Documentary'}) via ({wan_space} - {label})...", flush=True)
             client = Client(wan_space, token=tok, verbose=False)
             res = client.predict(
                 input_image=handle_file(start_img),
@@ -549,66 +716,61 @@ def animate_scene_smoothly(index, start_img, next_img, motion_prompt, out_raw_vi
     return False
 
 
-def generate_raw_voice_for_scene(seg_idx, scene):
+def build_scene_audio_uncut(seg_idx, scene, uploaded_scene_audio_map, out_wav):
+    """
+    يستخدم صوت المستخدم المرفوع (إن وجد) أو يولد الصوت الكامل بدون قطع أي حرف نهائياً!
+    """
+    scene_num = seg_idx + 1
     text = scene["narration"]
-    raw_mp3 = f"seg_raw_{seg_idx}.mp3"
-    trimmed_voice = f"seg_trim_{seg_idx}.wav"
+    sfx_key = scene["sfx"]
+    raw_voice_path = f"seg_raw_{seg_idx}.wav"
+    sfx_ogg = f"seg_sfx_{seg_idx}.ogg"
 
-    voice_ok = False
-    for v_name in [ENGLISH_VOICE, "en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural", "en-US-ChristopherNeural"]:
-        try:
-            subprocess.run([
-                "edge-tts", "--voice", v_name, "--rate=-4%",
-                "--text", text, "--write-media", raw_mp3
-            ], check=True, timeout=30, stderr=subprocess.DEVNULL)
-            if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
-                voice_ok = True
-                break
-        except Exception:
-            time.sleep(0.5)
+    if scene_num in uploaded_scene_audio_map:
+        src_aud = uploaded_scene_audio_map[scene_num]
+        print(f"🎤 Using your uploaded custom voice for Scene {scene_num}: ({src_aud})!", flush=True)
+        subprocess.run([
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-i", src_aud, "-ar", "44100", "-ac", "2", raw_voice_path
+        ], check=True)
+    else:
+        raw_mp3 = f"seg_raw_{seg_idx}.mp3"
+        voice_ok = False
+        for v_name in [ENGLISH_VOICE, "en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural", "en-US-ChristopherNeural"]:
+            try:
+                subprocess.run([
+                    "edge-tts", "--voice", v_name, "--rate=-2%",
+                    "--text", text, "--write-media", raw_mp3
+                ], check=True, timeout=45, stderr=subprocess.DEVNULL)
+                if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
+                    voice_ok = True
+                    break
+            except Exception:
+                time.sleep(0.5)
 
-    if not voice_ok:
-        encoded = urllib.parse.quote(text)
-        r = requests.get(f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q={encoded}", timeout=25)
-        with open(raw_mp3, "wb") as f:
-            f.write(r.content)
+        if not voice_ok:
+            encoded = urllib.parse.quote(text[:450])
+            r = requests.get(f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q={encoded}", timeout=25)
+            with open(raw_mp3, "wb") as f:
+                f.write(r.content)
 
-    warm_eq = "highpass=f=75,equalizer=f=180:width_type=o:width=1.5:g=2.6,equalizer=f=3600:width_type=o:width=2.0:g=1.8"
-    subprocess.run([
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-i", raw_mp3,
-        "-af", (
-            f"silenceremove=start_periods=1:start_silence=0.03:start_threshold=-42dB,"
-            f"areverse,silenceremove=start_periods=1:start_silence=0.05:start_threshold=-42dB,areverse,"
-            f"{warm_eq}"
-        ),
-        "-ar", "44100", "-ac", "2", trimmed_voice
-    ], check=True)
+        warm_eq = "highpass=f=75,equalizer=f=180:width_type=o:width=1.5:g=2.4,equalizer=f=3600:width_type=o:width=2.0:g=1.6"
+        subprocess.run([
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-i", raw_mp3,
+            "-af", f"silenceremove=start_periods=1:start_silence=0.05:start_threshold=-45dB,{warm_eq}",
+            "-ar", "44100", "-ac", "2", raw_voice_path
+        ], check=True)
 
     probe = subprocess.run([
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1", trimmed_voice
+        "-of", "default=noprint_wrappers=1:nokey=1", raw_voice_path
     ], capture_output=True, text=True, check=True)
-    v_dur = float(probe.stdout.strip() or "16.0")
-    return trimmed_voice, v_dur
+    v_dur = float(probe.stdout.strip() or "18.0")
+    # إضافة 0.65 ثانية بعد انتهاء الصوت لضمان عدم بتر أي حرف نهائياً!
+    final_dur = round(v_dur + 0.65, 2)
 
-
-def finalize_scene_audio_exact(seg_idx, scene, trimmed_voice, raw_v_dur, exact_target_dur, out_wav):
-    """
-    ضبط طول الصوت والمؤثرات الصوتية لكل مشهد ليطابق المدة المحسوبة بالمللي ثانية
-    بحيث يكون إجمالي الفيديو 275.00 ثانية (4 دقائق و35 ثانية بالضبط)!
-    """
-    sfx_key = scene["sfx"]
-    sfx_ogg = f"seg_sfx_{seg_idx}.ogg"
     sfx_url, sfx_vol = SFX_LIBRARY.get(sfx_key, SFX_LIBRARY["waves"])
-
-    # إذا كان صوت المشهد أطول من المدة المخصصة له، نسرعه بنسبة طفيفة جداً، وإذا كان أقصر نترك وقفة درامية طبيعية
-    if raw_v_dur > exact_target_dur - 0.35:
-        tempo = min(max(raw_v_dur / (exact_target_dur - 0.35), 0.90), 1.25)
-        voice_filter = f"atempo={round(tempo, 4)},adelay=180|180,volume=1.35"
-    else:
-        voice_filter = "adelay=250|250,volume=1.35"
-
     try:
         r = requests.get(sfx_url, timeout=15)
         if r.ok and len(r.content) > 1000:
@@ -616,27 +778,28 @@ def finalize_scene_audio_exact(seg_idx, scene, trimmed_voice, raw_v_dur, exact_t
                 f.write(r.content)
             subprocess.run([
                 "ffmpeg", "-y", "-loglevel", "error",
-                "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={exact_target_dur}",
+                "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={final_dur}",
                 "-i", sfx_ogg,
-                "-i", trimmed_voice,
+                "-i", raw_voice_path,
                 "-filter_complex",
-                f"[1:a]atrim=0:{min(exact_target_dur, 3.0)},afade=t=in:d=0.1,afade=t=out:st={max(min(exact_target_dur, 3.0) - 0.6, 0.2)}:d=0.6,volume={sfx_vol}[s];"
-                f"[2:a]{voice_filter}[v];"
+                f"[1:a]atrim=0:{min(final_dur, 3.0)},afade=t=in:d=0.1,afade=t=out:st={max(min(final_dur, 3.0) - 0.6, 0.2)}:d=0.6,volume={sfx_vol}[s];"
+                f"[2:a]adelay=200|200,apad=pad_dur=0.5,volume=1.35[v];"
                 f"[0:a][s][v]amix=inputs=3:duration=first:dropout_transition=0[a]",
-                "-map", "[a]", "-t", str(exact_target_dur), "-ar", "44100", "-ac", "2", out_wav
+                "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
             ], check=True)
-            return
+            return final_dur, raw_voice_path
     except Exception:
         pass
 
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={exact_target_dur}",
-        "-i", trimmed_voice,
+        "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={final_dur}",
+        "-i", raw_voice_path,
         "-filter_complex",
-        f"[1:a]{voice_filter}[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
-        "-map", "[a]", "-t", str(exact_target_dur), "-ar", "44100", "-ac", "2", out_wav
+        "[1:a]adelay=200|200,apad=pad_dur=0.5,volume=1.35[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
+        "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
     ], check=True)
+    return final_dur, raw_voice_path
 
 
 def render_widescreen_subtitle_png(phrase_text, png_path):
@@ -679,8 +842,11 @@ def render_widescreen_subtitle_png(phrase_text, png_path):
     img.save(png_path, "PNG")
 
 
-def build_scene_clip(index, scene, exact_duration, audio_file, all_scene_imgs):
+def build_scene_clip(index, scene, all_scene_imgs, uploaded_scene_audio_map):
     narration = scene["narration"]
+    audio_file = f"scene_audio_{index}.wav"
+    duration, clean_voice_wav = build_scene_audio_uncut(index, scene, uploaded_scene_audio_map, audio_file)
+
     start_img = all_scene_imgs[index]
     next_img = all_scene_imgs[index + 1] if index + 1 < len(all_scene_imgs) else None
 
@@ -688,9 +854,9 @@ def build_scene_clip(index, scene, exact_duration, audio_file, all_scene_imgs):
     base_video = f"base_{index}.mp4"
     video_file = f"scene_{index}.mp4"
     fps = 30
-    total_frames = int(round(exact_duration * fps))
+    total_frames = int(round(duration * fps))
 
-    ai_animated = animate_scene_smoothly(index, start_img, next_img, scene["motion_prompt"], raw_ai_video)
+    ai_animated = animate_scene_with_lipsync_or_wan(index, scene, start_img, next_img, clean_voice_wav, raw_ai_video)
 
     if ai_animated and os.path.exists(raw_ai_video):
         v_probe = subprocess.run([
@@ -698,22 +864,37 @@ def build_scene_clip(index, scene, exact_duration, audio_file, all_scene_imgs):
             "-of", "default=noprint_wrappers=1:nokey=1", raw_ai_video
         ], capture_output=True, text=True, check=True)
         raw_vid_dur = max(float(v_probe.stdout.strip() or "3.0"), 1.0)
-        stretch_factor = round((exact_duration + 0.25) / raw_vid_dur, 3)
 
-        subprocess.run([
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-i", raw_ai_video,
-            "-vf", (
-                f"setpts={stretch_factor}*PTS,"
-                f"minterpolate=fps={fps}:mi_mode=blend,"
-                f"tpad=stop_mode=clone:stop_duration=3,"
-                f"scale=2112:1188:force_original_aspect_ratio=increase,crop=2112:1188,"
-                f"crop={VIDEO_W}:{VIDEO_H}:'(iw-{VIDEO_W})/2 - 35*(t/{exact_duration})':'(ih-{VIDEO_H})/2 - 20*(t/{exact_duration})',"
-                f"cas=0.65,setsar=1,format=yuv420p"
-            ),
-            "-t", str(exact_duration), "-r", str(fps),
-            "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
-        ], check=True)
+        if scene.get("lip_sync"):
+            # في مشاهد المتحدث (Lip-Sync)، نكرر حركة الحديث ذهاباً وإياباً بنعومة (Ping-Pong Speaking Loop)
+            # حتى تظل شفايف المتحدث تتحرك بسرعة طبيعية طوال جملته دون تجميد!
+            subprocess.run([
+                "ffmpeg", "-y", "-loglevel", "error",
+                "-stream_loop", "-1", "-i", raw_ai_video,
+                "-vf", (
+                    f"scale=2112:1188:force_original_aspect_ratio=increase,crop=2112:1188,"
+                    f"crop={VIDEO_W}:{VIDEO_H}:'(iw-{VIDEO_W})/2':'(ih-{VIDEO_H})/2 - 18*(t/{duration})',"
+                    f"cas=0.65,setsar=1,format=yuv420p"
+                ),
+                "-t", str(duration), "-r", str(fps),
+                "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
+            ], check=True)
+        else:
+            stretch_factor = round((duration + 0.25) / raw_vid_dur, 3)
+            subprocess.run([
+                "ffmpeg", "-y", "-loglevel", "error",
+                "-i", raw_ai_video,
+                "-vf", (
+                    f"setpts={stretch_factor}*PTS,"
+                    f"minterpolate=fps={fps}:mi_mode=blend,"
+                    f"tpad=stop_mode=clone:stop_duration=3,"
+                    f"scale=2112:1188:force_original_aspect_ratio=increase,crop=2112:1188,"
+                    f"crop={VIDEO_W}:{VIDEO_H}:'(iw-{VIDEO_W})/2 - 35*(t/{duration})':'(ih-{VIDEO_H})/2 - 20*(t/{duration})',"
+                    f"cas=0.65,setsar=1,format=yuv420p"
+                ),
+                "-t", str(duration), "-r", str(fps),
+                "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
+            ], check=True)
     else:
         subprocess.run([
             "ffmpeg", "-y", "-loglevel", "error",
@@ -723,23 +904,20 @@ def build_scene_clip(index, scene, exact_duration, audio_file, all_scene_imgs):
                 f"zoompan=z='min(zoom+0.0005,1.18)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                 f"d={total_frames + 15}:s={VIDEO_W}x{VIDEO_H}:fps={fps},cas=0.6,setsar=1,format=yuv420p"
             ),
-            "-t", str(exact_duration), "-r", str(fps),
+            "-t", str(duration), "-r", str(fps),
             "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
         ], check=True)
 
-    clean_words = re.sub(r'["\'«»*():;,.?!—-]', '', narration).split()
-    phrases = [" ".join(clean_words[i:i + 5]) for i in range(0, len(clean_words), 5)] or ["..."]
-    step_dur = exact_duration / max(len(phrases), 1)
+    # تحليل توقيت كلمات المشهد عبر Faster-Whisper لمزامنة الكابشن مع الصوت المرفوع بالمللي ثانية
+    timed_phrases = extract_whisper_phrases_for_scene(clean_voice_wav, narration, duration)
 
     inputs_cmd = ["-i", base_video, "-i", audio_file]
     filter_parts = []
     last_stream = "[0:v]"
-    for p_idx, phrase in enumerate(phrases):
+    for p_idx, (phrase, start_t, end_t) in enumerate(timed_phrases):
         png_file = f"sub_{index}_{p_idx}.png"
         render_widescreen_subtitle_png(phrase, png_file)
-        inputs_cmd.extend(["-loop", "1", "-t", str(exact_duration), "-i", png_file])
-        start_t = round(p_idx * step_dur, 2)
-        end_t = round((p_idx + 1) * step_dur, 2)
+        inputs_cmd.extend(["-loop", "1", "-t", str(duration), "-i", png_file])
         next_stream = f"[v{p_idx}]"
         inp_idx = p_idx + 2
         filter_parts.append(
@@ -747,8 +925,7 @@ def build_scene_clip(index, scene, exact_duration, audio_file, all_scene_imgs):
         )
         last_stream = next_stream
 
-    # انتقال ناعم ومستقل داخل كل مشهد (يمنع مشكلة التهنيج في المشاهد الأخيرة 100%)
-    fade_out_st = max(round(exact_duration - 0.25, 2), 0.5)
+    fade_out_st = max(round(duration - 0.25, 2), 0.5)
     filter_parts.append(
         f"{last_stream}fade=t=in:st=0:d=0.22,fade=t=out:st={fade_out_st}:d=0.25,format=yuv420p[vout]"
     )
@@ -758,13 +935,13 @@ def build_scene_clip(index, scene, exact_duration, audio_file, all_scene_imgs):
         *inputs_cmd,
         "-filter_complex", ";".join(filter_parts),
         "-map", "[vout]", "-map", "1:a",
-        "-t", str(exact_duration),
+        "-t", str(duration),
         "-r", str(fps),
         "-c:v", "libx264", "-preset", "fast", "-crf", "16",
         "-c:a", "aac", "-ar", "44100", "-ac", "2",
         video_file
     ], check=True)
-    return video_file
+    return video_file, duration
 
 
 def upload_long_video_to_youtube(video_path, title, refresh_token):
@@ -777,7 +954,6 @@ def upload_long_video_to_youtube(video_path, title, refresh_token):
     )
     youtube = build("youtube", "v3", credentials=creds)
 
-    # بدون كلمة #shorts نهائياً حتى يحتسبه يوتيوب كفيديو طويل في شريط الـ Watch Hours!
     clean_title = title[:95]
 
     body = {
@@ -785,10 +961,10 @@ def upload_long_video_to_youtube(video_path, title, refresh_token):
             "title": clean_title,
             "description": (
                 f"{title}\n\n"
-                "The full documentary story of the 1962 Alcatraz prison escape by Frank Morris, John Anglin, and Clarence Anglin.\n"
-                "#history #documentary #alcatraz #mystery #truecrime"
+                "Part 1 of Lost Ancient Engineering Secrets: How Ancient Rome built self-healing underwater concrete stronger than modern buildings.\n"
+                "#history #engineering #ancientrome #documentary #science"
             ),
-            "tags": ["alcatraz escape", "1962 alcatraz", "history documentary", "frank morris", "mystery", "how they escaped"],
+            "tags": ["roman concrete", "ancient engineering", "self healing concrete", "history documentary", "ancient rome", "science"],
             "categoryId": "27"
         },
         "status": {
@@ -802,80 +978,59 @@ def upload_long_video_to_youtube(video_path, title, refresh_token):
 
 
 def assemble_and_publish():
-    title = "How 3 Men Escaped the Most Impossible Prison on Earth Using Spoons & Raincoats"
-    uploaded_map = discover_uploaded_images_map()
-    print(f"📸 Uploaded Gemini images found in 'images/': {len(uploaded_map)} ({sorted(uploaded_map.keys())})", flush=True)
+    title = "How The Ancient Romans Built Concrete Stronger Than Modern Buildings (Part 1)"
+    uploaded_img_map = discover_uploaded_images_map()
+    single_full_audio, numbered_audios = discover_uploaded_audio_assets()
 
-    # 1. تجهيز جميع الصور الـ 15 بمقاس 16:9 العرضي
+    print(f"📸 Uploaded Gemini images found: {len(uploaded_img_map)} ({sorted(uploaded_img_map.keys())})", flush=True)
+
+    if not numbered_audios and single_full_audio:
+        numbered_audios = split_full_uploaded_audio_with_whisper(single_full_audio, ROMAN_CONCRETE_SCENES)
+    elif numbered_audios:
+        print(f"🎤 Found {len(numbered_audios)} numbered custom audio files: {sorted(numbered_audios.keys())}", flush=True)
+
     all_scene_imgs = []
-    for idx, scene in enumerate(ALCATRAZ_SCENES):
+    for idx, scene in enumerate(ROMAN_CONCRETE_SCENES):
         img_file = f"scene_img_{idx}.jpg"
-        obtain_scene_image(idx, scene["image_prompt"], img_file, uploaded_map)
+        obtain_scene_image(idx, scene["image_prompt"], img_file, uploaded_img_map)
         all_scene_imgs.append(img_file)
 
-    # 2. توليد الصوت الخام لجميع المشاهد الـ 15 وحساب التوزيع الزمني الدقيق ليصبح الإجمالي 275.0 ثانية (4:35) بالضبط!
-    print("🎙️ Generating English Documentary Voiceover & calibrating exact 04:35 (275.0s) timeline...", flush=True)
-    trimmed_voices = []
-    raw_durs = []
-    for idx, scene in enumerate(ALCATRAZ_SCENES):
-        t_wav, r_dur = generate_raw_voice_for_scene(idx, scene)
-        trimmed_voices.append(t_wav)
-        raw_durs.append(r_dur)
-
-    total_raw = sum(raw_durs)
-    exact_durations = []
-    running_sum = 0.0
-    for idx, r_dur in enumerate(raw_durs):
-        if idx < len(raw_durs) - 1:
-            scaled = round((r_dur / total_raw) * TARGET_TOTAL_VIDEO_SECONDS, 2)
-            exact_durations.append(scaled)
-            running_sum += scaled
-        else:
-            # المشهد الأخير يأخذ الباقي بالمللي ثانية ليصبح المجموع 275.00 ثانية بالضبط
-            last_dur = round(TARGET_TOTAL_VIDEO_SECONDS - running_sum, 2)
-            exact_durations.append(last_dur)
-
-    print(f"⏱️ Calibrated Scene Durations Sum: {round(sum(exact_durations), 2)}s (04:35 Exact)!", flush=True)
-
-    # 3. إنتاج المشاهد الـ 15 بدون أي تجميد
     scene_videos = []
-    for idx, scene in enumerate(ALCATRAZ_SCENES):
-        exact_dur = exact_durations[idx]
-        audio_wav = f"scene_audio_{idx}.wav"
-        finalize_scene_audio_exact(idx, scene, trimmed_voices[idx], raw_durs[idx], exact_dur, audio_wav)
-        print(f"--- Animating & Syncing Scene {idx + 1}/15 (Target: {exact_dur}s) ---", flush=True)
-        clip = build_scene_clip(idx, scene, exact_dur, audio_wav, all_scene_imgs)
+    total_dur = 0.0
+    for idx, scene in enumerate(ROMAN_CONCRETE_SCENES):
+        print(f"--- Producing Scene {idx + 1}/15 ---", flush=True)
+        clip, dur = build_scene_clip(idx, scene, all_scene_imgs, numbered_audios)
         scene_videos.append(clip)
+        total_dur += dur
+
+    print(f"⏱️ Total Uncut Documentary Duration: {round(total_dur, 1)}s ({round(total_dur / 60, 2)} minutes)!", flush=True)
 
     with open("inputs.txt", "w") as f:
         for v in scene_videos:
             f.write(f"file '{v}'\n")
 
     merged_video = "merged_long.mp4"
-    final_video = "final_long_04_35.mp4"
+    final_video = "final_roman_concrete_part1.mp4"
 
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
         "-i", "inputs.txt", "-c", "copy", merged_video
     ], check=True)
 
-    # ضبط الخلفية الصوتية الوثائقية وقفل الطول النهائي على 275.0 ثانية (4 دقائق و35 ثانية بالضبط)
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
         "-i", merged_video,
         "-f", "lavfi", "-i", "anoisesrc=c=pink:a=0.005",
         "-filter_complex",
-        f"[1:a]lowpass=f=240[bg];[0:a]apad=whole_dur={TARGET_TOTAL_VIDEO_SECONDS},volume=1.15[fg];"
-        f"[fg][bg]amix=inputs=2:duration=first:dropout_transition=1[a]",
+        "[1:a]lowpass=f=240[bg];[0:a]volume=1.15[fg];[fg][bg]amix=inputs=2:duration=first:dropout_transition=1[a]",
         "-map", "0:v", "-map", "[a]",
-        "-t", str(TARGET_TOTAL_VIDEO_SECONDS),
         "-vf", f"scale={VIDEO_W}:{VIDEO_H},setsar=1,format=yuv420p",
         "-r", "30", "-c:v", "libx264", "-preset", "fast", "-profile:v", "high",
         "-level", "4.0", "-crf", "16", "-c:a", "aac", "-ar", "44100",
         "-ac", "2", "-b:a", "192k", "-movflags", "+faststart", final_video
     ], check=True)
 
-    print("🚀 Publishing 04:35 Long-Form Video to YouTube...", flush=True)
+    print("🚀 Publishing Part 1 Long-Form Documentary to YouTube...", flush=True)
     for token in YT_REFRESH_TOKENS:
         try:
             upload_long_video_to_youtube(final_video, title, token)
