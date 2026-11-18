@@ -14,9 +14,9 @@ from googleapiclient.http import MediaFileUpload
 from gradio_client import Client, handle_file
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 
-print("🚀 Starting Uncut 16:9 Documentary Studio (Part 1: Roman Concrete - 100% Uncut Studio Audio)...", flush=True)
+print("🚀 Starting Lost Ancient Engineering Series Trailer Short (9:16 - Zero Lip-Sync - Uncut Audio)...", flush=True)
 
-VIDEO_W, VIDEO_H = 1920, 1080  # Horizontal 16:9 Long-Form YouTube format
+VIDEO_W, VIDEO_H = 1080, 1920  # Vertical 9:16 YouTube Shorts & Reels
 ENGLISH_VOICE = os.getenv("ENGLISH_VOICE", "en-US-AndrewMultilingualNeural").strip() or "en-US-AndrewMultilingualNeural"
 
 BUILTIN_HF_KEYS = [
@@ -49,214 +49,99 @@ YT_CLIENT_ID = os.getenv("YT_CLIENT_ID", "").strip()
 YT_CLIENT_SECRET = os.getenv("YT_CLIENT_SECRET", "").strip()
 YT_REFRESH_TOKENS = [t.strip() for t in os.getenv("YT_REFRESH_TOKENS", "").split(",") if t.strip()]
 
+FB_PAGE_IDS = [p.strip() for p in os.getenv("FB_PAGE_IDS", "").split(",") if p.strip()]
+META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "").strip()
+
+GRAPH_API = "https://graph.facebook.com/v21.0"
 FONT_BOLD_PATH = "Montserrat-ExtraBold.ttf"
-MASTER_SEED = 202601
+MASTER_SEED = 202699
 
 os.environ.pop("HF_TOKEN", None)
 EXHAUSTED_ZEROGPU_TOKENS = set()
 
 SFX_LIBRARY = {
-    "waves": ("https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg", 0.18),
-    "crumble": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.22),
-    "fire": ("https://actions.google.com/sounds/v1/weather/wind_blowing.ogg", 0.18),
-    "whoosh": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.20),
-    "water": ("https://actions.google.com/sounds/v1/water/water_splashing.ogg", 0.20)
+    "impact": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.28),
+    "waves": ("https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg", 0.20),
+    "whoosh": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.24),
+    "fire": ("https://actions.google.com/sounds/v1/weather/wind_blowing.ogg", 0.22),
+    "clang": ("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg", 0.22)
 }
 
 STYLE_PREFIX = (
     "Masterpiece stylized 3D cinematic documentary render, Unreal Engine 5 studio lighting, "
-    "rich textures, ultra-crisp 8k horizontal 16:9 widescreen, no text, no watermarks. "
+    "rich textures, dramatic shadows, ultra-crisp 8k vertical 9:16, no text, no watermarks. "
 )
 
-ROMAN_CONCRETE_SCENES = [
+TRAILER_SCENES = [
     {
         "id": 0,
-        "sfx": "waves",
-        "lip_sync": True,
-        "narration": (
-            "Look at modern concrete skyscrapers, bridges, and highways built with the most advanced technology of the twenty-first century. "
-            "Within just fifty to eighty years, steel-reinforced modern concrete begins to crack, rust, and crumble into dust. "
-            "Yet across the Mediterranean Sea, massive Roman harbors built two thousand years ago are still standing completely intact, "
-            "battered by violent ocean waves every single day, and somehow growing stronger every century."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}A wise Roman master architect in a toga facing the camera directly ready to speak, between a cracked modern bridge and an intact Roman harbor.",
-        "motion_prompt": "Natural 3D character speaking directly to the camera with expressive lip movement, subtle head nods, and natural breathing"
+        "sfx": "impact",
+        "narration": "Modern engineers still can't recreate five ancient inventions, and one of them is already hiding under the ocean!",
+        "image_prompt": f"{STYLE_PREFIX}Three mysterious glowing ancient artifacts on pedestals in a dark stone vault: a bronze gear computer, green liquid fire, and a Roman concrete column.",
+        "motion_prompt": "Dramatic 3D camera push-in through floating dust particles toward the three glowing ancient artifacts in the dark vault"
     },
     {
         "id": 1,
-        "sfx": "whoosh",
-        "lip_sync": False,
-        "narration": (
-            "To understand this ancient mystery, travel to the heart of Rome and step inside the Pantheon, built nearly two millennia ago. "
-            "Above your head hangs the largest unreinforced concrete dome on the planet, spanning one hundred and forty-two feet across open air. "
-            "There is not a single rod of steel inside that dome. If modern engineers poured a dome of that exact size using standard modern concrete without steel today, "
-            "it would collapse under its own weight the moment the scaffolding was removed."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}Wide interior shot of the Roman Pantheon dome with a golden sunbeam shining down through the oculus.",
-        "motion_prompt": "Majestic 3D camera pan inside the Roman Pantheon as golden dust motes float in the sunbeam shining through the dome oculus"
+        "sfx": "waves",
+        "narration": "Part One: Why do modern concrete bridges crumble in fifty years, while two-thousand-year-old Roman harbors grow stronger?",
+        "image_prompt": f"{STYLE_PREFIX}Split-level shot showing a cracked modern bridge above and an intact submerged ancient Roman concrete harbor in blue ocean waves below.",
+        "motion_prompt": "Smooth 3D camera pan downward from the cracked bridge into the clear blue ocean waves surrounding the intact Roman pier"
     },
     {
         "id": 2,
-        "sfx": "crumble",
-        "lip_sync": False,
-        "narration": (
-            "Why does modern concrete fail so quickly compared to Roman structures? "
-            "Modern Portland cement is designed for speed and mass production, mixed smoothly with sand, gravel, and water to harden fast. "
-            "When salt water seeps into microscopic pores inside modern concrete, it attacks the internal steel bars. "
-            "The rusting steel expands up to six times its original volume, exploding the surrounding concrete from the inside out."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}3D cutaway cross-section of a modern concrete pillar underwater with rusting internal steel rebar cracking the concrete.",
-        "motion_prompt": "3D engineering cutaway animation, orange rust spreads on the internal steel bars as cracks form across the grey concrete pillar"
+        "sfx": "whoosh",
+        "narration": "The Romans trapped tiny white calcium capsules inside hot-mixed mortar so their walls literally heal their own cracks.",
+        "image_prompt": f"{STYLE_PREFIX}Macro 3D cutaway of blue seawater hitting a white calcium sphere inside a concrete crack and crystallizing to seal it shut.",
+        "motion_prompt": "3D microscopic animation, sparkling white calcium crystals grow rapidly and seal the crack inside the stone wall"
     },
     {
         "id": 3,
         "sfx": "waves",
-        "lip_sync": False,
-        "narration": (
-            "In stark contrast, ancient Roman marine concrete did not fear the ocean; it actually needed seawater to reach its ultimate strength. "
-            "Two thousand years ago, Roman emperors constructed gigantic artificial harbors at Caesarea and Pozzuoli by pouring thousands of tons of concrete directly into the open sea. "
-            "Today, marine geologists testing those submerged Roman piers have discovered that they are significantly harder now than the day they were poured."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}Split underwater and surface shot of an ancient Roman harbor with wooden ships above and a massive submerged concrete pier below.",
-        "motion_prompt": "3D underwater cinematic animation, blue ocean waves ripple against the ancient submerged Roman concrete pier"
+        "narration": "Part Two: Divers pulled a two-thousand-year-old bronze machine from a shipwreck, packed with precision gears.",
+        "image_prompt": f"{STYLE_PREFIX}Underwater 3D shot of a diver flashlight illuminating the encrusted bronze Antikythera Mechanism resting on the sandy seabed.",
+        "motion_prompt": "Underwater 3D camera glide as light beams sweep across the ancient bronze gears buried in the ocean floor"
     },
     {
         "id": 4,
-        "sfx": "fire",
-        "lip_sync": False,
-        "narration": (
-            "For centuries, historians assumed the Romans just got lucky with their raw materials. "
-            "But in the first century AD, the Roman author Pliny the Elder wrote a cryptic clue in his encyclopedia of natural history. "
-            "He described how volcanic ash from the Gulf of Naples, mixed with limestone and seawater, transformed into a single stone mass, "
-            "impenetrable to the waves and growing stronger every day it remained underwater."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}Pliny the Elder writing on a parchment scroll by candlelight with Mount Vesuvius glowing through an arched window behind him.",
-        "motion_prompt": "3D atmospheric animation, candlelight flickers over the parchment scroll while volcanic smoke rises from Mount Vesuvius in the distance"
+        "sfx": "whoosh",
+        "narration": "An ancient analog computer that predicted eclipses and planetary orbits a thousand years before mechanical clocks!",
+        "image_prompt": f"{STYLE_PREFIX}Glowing 3D reconstruction of the bronze Antikythera Mechanism with interlocking golden cogwheels and celestial star rings.",
+        "motion_prompt": "Cinematic 3D mechanical animation, dozens of intricate golden bronze gears rotate smoothly inside glowing star-chart rings"
     },
     {
         "id": 5,
         "sfx": "fire",
-        "lip_sync": True,
-        "narration": (
-            "We did not build for a single generation; we built for eternity. "
-            "Our secret began in the shadow of Mount Vesuvius, where we harvested special volcanic ash called pozzolana, rich in silica and alumina. "
-            "When we mixed that volcanic ash with roasted limestone and dropped it into wooden molds beneath the sea, "
-            "we triggered a chemical reaction that modern builders completely forgot."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}The Roman master engineer facing the camera directly ready to speak, holding a bowl of volcanic ash in front of glowing lime kilns.",
-        "motion_prompt": "Natural 3D character speaking directly to the camera with realistic lip sync and hand gestures while fire glows in the background"
+        "narration": "Part Three: The Byzantine Empire guarded a terrifying liquid weapon called Greek Fire...",
+        "image_prompt": f"{STYLE_PREFIX}An ancient Byzantine warship shooting a roaring jet of blazing orange and green Greek Fire across dark stormy ocean waves.",
+        "motion_prompt": "Epic 3D naval action animation, blazing orange and green flames roar out from the bronze dragon siphon of the warship"
     },
     {
         "id": 6,
-        "sfx": "whoosh",
-        "lip_sync": False,
-        "narration": (
-            "When twentieth-century scientists finally placed ancient Roman concrete under high-powered electron microscopes, they noticed something bizarre. "
-            "Scattered throughout the grey Roman mortar were thousands of tiny, bright white mineral chunks, just a few millimeters wide, known as lime clasts. "
-            "For decades, modern engineers dismissed these white chunks as sloppy, careless mixing by ancient workers who failed to stir their mortar properly."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}Macro 3D view of a slice of ancient Roman concrete under a microscope showing bright white mineral chunks scattered in grey stone.",
-        "motion_prompt": "Smooth 3D macro camera push-in focusing on the glowing white mineral lime clasts embedded inside the ancient grey concrete"
+        "sfx": "fire",
+        "narration": "That burst into flames on top of water, couldn't be put out, and vanished into history forever.",
+        "image_prompt": f"{STYLE_PREFIX}Intense close-up of fierce neon-green and orange flames burning violently on top of splashing dark ocean waves at night.",
+        "motion_prompt": "3D elemental animation, emerald green and orange flames dance wildly across the rippling dark sea water"
     },
     {
         "id": 7,
-        "sfx": "whoosh",
-        "lip_sync": False,
-        "narration": (
-            "Calling the Romans sloppy made no sense at all. The Romans were the most disciplined, meticulous engineers of the ancient world, "
-            "spending years perfecting every recipe before building an aqueduct or a harbor. "
-            "Recently, a team of researchers at MIT looked closer at those tiny white chunks using advanced X-ray imaging, "
-            "and realized those white flecks were not a mistake. They were the secret weapon."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}Scientists in a high-tech lab examining a chunk of Roman concrete under a glowing cyan X-ray laser scanner.",
-        "motion_prompt": "3D laboratory animation, a glowing cyan X-ray laser beam scans across the Roman concrete sample highlighting the white pockets"
+        "sfx": "clang",
+        "narration": "Part Four: Ancient blacksmiths forged Damascus blades with microscopic carbon nanotubes inside the steel!",
+        "image_prompt": f"{STYLE_PREFIX}Macro 3D forge shot of a gleaming curved Damascus steel sword with swirling metallic patterns over red-hot embers and flying sparks.",
+        "motion_prompt": "3D forge animation, bright golden sparks float upward past the shimmering swirling patterns on the Damascus sword blade"
     },
     {
         "id": 8,
-        "sfx": "fire",
-        "lip_sync": False,
-        "narration": (
-            "Instead of mixing their concrete cold with water the way modern construction crews do, the ancient Romans used a dangerous process called hot mixing. "
-            "They combined reactive quicklime, burnt limestone powder, directly with volcanic ash and water. "
-            "This triggered a violent exothermic chemical reaction, heating the entire concrete mixture to over two hundred degrees Celsius, "
-            "boiling and fusing the minerals together."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}Roman workers pouring white quicklime and volcanic ash into a wooden trough with boiling steam and glowing orange heat.",
-        "motion_prompt": "3D dramatic animation, thick white steam and glowing orange heat rise from the boiling Roman mortar mix"
+        "sfx": "impact",
+        "narration": "And Part Five: A two-thousand-year-old bronze dragon machine that detected earthquakes hundreds of miles away!",
+        "image_prompt": f"{STYLE_PREFIX}Zhang Heng's ornate ancient Chinese bronze seismoscope urn with sculpted dragons dropping a metal ball toward a bronze toad below.",
+        "motion_prompt": "3D dramatic animation, the shiny bronze sphere drops cleanly from the sculpted dragon jaw toward the bronze toad below"
     },
     {
         "id": 9,
-        "sfx": "crumble",
-        "lip_sync": False,
-        "narration": (
-            "Because of that intense two-hundred-degree heat inside the Roman mixer, tiny pockets of calcium did not dissolve. "
-            "Instead, they baked into brittle, porous white spheres trapped inside the hardening stone wall, "
-            "like millions of microscopic medicine capsules waiting to be activated centuries in the future."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}3D X-ray cutaway inside the Roman concrete wall showing bright white spherical calcium pockets locked inside the stone.",
-        "motion_prompt": "3D scientific cutaway animation, glowing white spherical calcium capsules pulse gently inside the dark stone matrix"
-    },
-    {
-        "id": 10,
         "sfx": "whoosh",
-        "lip_sync": True,
-        "narration": (
-            "When we tested this Roman recipe in the laboratory, we were stunned by what happened next. "
-            "These tiny white lime clasts act as an automatic self-healing system trapped inside the wall. "
-            "The moment a tiny crack forms in the concrete, rainwater or seawater seeps into the crack and hits one of those ancient calcium pockets."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}A modern materials scientist in a white lab coat facing the camera directly ready to speak, holding a Roman concrete sample.",
-        "motion_prompt": "Natural 3D scientist character speaking directly to the camera with accurate lip movement and natural facial expressions"
-    },
-    {
-        "id": 11,
-        "sfx": "water",
-        "lip_sync": False,
-        "narration": (
-            "The instant water touches that trapped white lime clast, the calcium dissolves and flows directly into the open fracture. "
-            "As it reacts with volcanic ash along the edges of the crack, it rapidly recrystallizes into solid calcium carbonate and a rare mineral called Al-tobermorite, "
-            "sealing the crack shut from the inside before it can ever spread."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}Macro 3D cutaway of water hitting a white calcium sphere inside a concrete crack and crystallizing to seal the crack shut.",
-        "motion_prompt": "3D microscopic animation, glowing white calcium crystals grow and seal the dark crack inside the concrete wall"
-    },
-    {
-        "id": 12,
-        "sfx": "water",
-        "lip_sync": False,
-        "narration": (
-            "To prove this wasn't just a theory, the MIT scientists mixed two batches of concrete: one using the modern recipe, and one using the ancient Roman hot-mixing formula. "
-            "They intentionally cracked both blocks down the middle and ran a slow stream of water through them. "
-            "The modern concrete stayed broken and leaked continuously, while the Roman block completely healed its own cracks within just fourteen days."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}Side-by-side lab test showing a leaking cracked modern concrete block on the left and a sealed self-healed Roman concrete block on the right.",
-        "motion_prompt": "3D laboratory comparison animation, water leaks from the left block while the right Roman block remains completely sealed"
-    },
-    {
-        "id": 13,
-        "sfx": "waves",
-        "lip_sync": False,
-        "narration": (
-            "Today, producing modern cement accounts for nearly eight percent of all global carbon dioxide emissions, "
-            "largely because modern structures have to be torn down and rebuilt every few decades. "
-            "By reviving this lost two-thousand-year-old Roman formula, modern engineers are now beginning to pour new seawalls and bridges "
-            "that can heal their own fractures and last for centuries."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}A massive modern coastal seawall and bridge against ocean waves with a glowing structural blueprint overlay.",
-        "motion_prompt": "3D cinematic camera glide along the massive coastal seawall as ocean waves crash against it harmlessly"
-    },
-    {
-        "id": 14,
-        "sfx": "whoosh",
-        "lip_sync": True,
-        "narration": (
-            "Two thousand years ago, without computers, without electron microscopes, and without steel reinforcement, "
-            "Roman builders mastered a level of chemical engineering that outlasted empires. "
-            "And Roman concrete is only the first chapter. In Part Two, we dive to the bottom of the Aegean Sea "
-            "to uncover a two-thousand-year-old geared bronze computer that shouldn't exist."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}The narrator facing the camera directly at sunset with the Roman Pantheon on one side and a glowing bronze geared mechanism on the other.",
-        "motion_prompt": "Natural 3D narrator speaking directly to the camera with realistic lip sync as golden sunset light shines behind him"
+        "narration": "Part One on Roman self-healing concrete is out right now—tap the linked video below to watch the full story, and subscribe for Part Two!",
+        "image_prompt": f"{STYLE_PREFIX}Inside the ancient Roman Pantheon as a golden sunbeam shines down through the dome oculus toward the bottom center of the frame.",
+        "motion_prompt": "Majestic 3D camera push-in inside the Roman Pantheon as golden rays of light shimmer downward"
     }
 ]
 
@@ -345,7 +230,6 @@ def ensure_english_font():
 
 
 def discover_uploaded_images_map():
-    """فحص فولدر images أولاً ثم scenes ثم المجلد الرئيسي"""
     valid_exts = (".jpg", ".jpeg", ".png", ".webp", ".jfif")
     ignore_prefixes = ("scene_", "stage_", "temp_", "sub_", "base_", "raw_", "stretched_", "nuclear_")
     raw_num_map = {}
@@ -371,23 +255,8 @@ def discover_uploaded_images_map():
     return raw_num_map
 
 
-def save_clean_widescreen_image(src_path, dst_file):
-    img = Image.open(src_path).convert("RGB")
-    src_w, src_h = img.size
-    target_ratio = VIDEO_W / VIDEO_H
-    src_ratio = src_w / src_h
-
-    if abs(src_ratio - target_ratio) > 0.25:
-        bg = img.resize((VIDEO_W, VIDEO_H), Image.Resampling.LANCZOS).filter(ImageFilter.GaussianBlur(28))
-        bg = ImageEnhance.Brightness(bg).enhance(0.55)
-        new_h = VIDEO_H
-        new_w = int(src_w * (new_h / src_h))
-        fg = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-        bg.paste(fg, ((VIDEO_W - new_w) // 2, 0))
-        img = bg
-    else:
-        img = img.resize((VIDEO_W, VIDEO_H), Image.Resampling.LANCZOS)
-
+def save_clean_vertical_image(src_path, dst_file):
+    img = Image.open(src_path).convert("RGB").resize((VIDEO_W, VIDEO_H), Image.Resampling.LANCZOS)
     img = ImageEnhance.Contrast(img).enhance(1.04)
     img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=110, threshold=3))
     img.save(dst_file, "JPEG", quality=98)
@@ -402,7 +271,7 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
     scene_num = index + 1
     if scene_num in uploaded_map:
         src = uploaded_map[scene_num]
-        save_clean_widescreen_image(src, dst_jpg)
+        save_clean_vertical_image(src, dst_jpg)
         print(f"📸 Using your uploaded Gemini image for Scene {scene_num}: ({src})!", flush=True)
         return
 
@@ -419,8 +288,8 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
                         prompt=image_prompt,
                         seed=MASTER_SEED,
                         randomize_seed=False,
-                        width=1792,
-                        height=1024,
+                        width=1024,
+                        height=1792,
                         guidance_scale=3.5,
                         num_inference_steps=steps,
                         api_name="/infer"
@@ -430,8 +299,8 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
                         prompt=image_prompt,
                         seed=MASTER_SEED,
                         randomize_seed=False,
-                        width=1792,
-                        height=1024,
+                        width=1024,
+                        height=1792,
                         num_inference_steps=steps,
                         api_name="/infer"
                     )
@@ -439,7 +308,7 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
                 if isinstance(img_path, dict) and "path" in img_path:
                     img_path = img_path["path"]
                 if isinstance(img_path, str) and os.path.exists(img_path):
-                    save_clean_widescreen_image(img_path, dst_jpg)
+                    save_clean_vertical_image(img_path, dst_jpg)
                     return
             except Exception as e:
                 if is_quota_error(e):
@@ -468,48 +337,10 @@ def extract_video_path(result):
     return None
 
 
-def animate_scene_with_lipsync_or_wan(index, scene, start_img, next_img, out_raw_video):
-    motion_prompt = scene["motion_prompt"]
-    is_lipsync = scene.get("lip_sync", False)
-    full_motion = (
-        f"{motion_prompt}, realistic lip movement synchronized with speech, expressive talking face, high quality 3D"
-        if is_lipsync else
-        f"{motion_prompt}, smooth continuous 3D cinematic documentary animation, high quality"
-    )
+def animate_scene_cinematic(index, start_img, motion_prompt, out_raw_video):
+    full_motion = f"{motion_prompt}, smooth continuous 3D cinematic animation, high quality, vivid lighting"
     neg_prompt = "morphing, deforming, melting, warping, blurry, low quality, worst quality, text, watermark, nsfw"
     all_pool = [None] + HF_TOKENS
-
-    if not is_lipsync and next_img and os.path.exists(next_img):
-        for tok in all_pool[:3]:
-            tok_key = "FLF_IP" if tok is None else f"FLF_{tok[:12]}"
-            if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
-                continue
-            try:
-                flf_space = "multimodalart/wan-2-2-first-last-frame"
-                client = Client(flf_space, token=tok, verbose=False)
-                res = client.predict(
-                    start_image=handle_file(start_img),
-                    end_image=handle_file(next_img),
-                    prompt=full_motion,
-                    negative_prompt=neg_prompt,
-                    duration_seconds=3.0,
-                    steps=4,
-                    guidance_scale=1.0,
-                    guidance_scale_2=1.0,
-                    seed=MASTER_SEED + index,
-                    randomize_seed=False,
-                    api_name="/generate_video"
-                )
-                v_path = extract_video_path(res)
-                if v_path:
-                    shutil.copyfile(v_path, out_raw_video)
-                    print(f"🔗 Scene {index + 1} smoothly morphed (Start->End Frame) via {flf_space}!", flush=True)
-                    return True
-            except Exception as e:
-                if is_quota_error(e):
-                    EXHAUSTED_ZEROGPU_TOKENS.add(tok_key)
-                    continue
-                break
 
     for pool_idx, tok in enumerate(all_pool):
         tok_key = "SERVER_IP" if tok is None else f"TOK_{tok[:12]}"
@@ -518,7 +349,7 @@ def animate_scene_with_lipsync_or_wan(index, scene, start_img, next_img, out_raw
         label = "Free Server IP" if tok is None else f"HF Token #{pool_idx} ({tok[:10]}...)"
         try:
             wan_space = "zerogpu-aoti/wan2-2-fp8da-aoti-faster"
-            print(f"🎬 Animating Scene {index + 1} ({'Lip-Sync Speaking' if is_lipsync else '3D Documentary'}) via ({wan_space} - {label})...", flush=True)
+            print(f"🎬 Animating Scene {index + 1} via ({wan_space} - {label})...", flush=True)
             client = Client(wan_space, token=tok, verbose=False)
             res = client.predict(
                 input_image=handle_file(start_img),
@@ -566,11 +397,7 @@ def vtt_time_to_seconds(t_str):
     return 0.0
 
 
-def parse_vtt_into_5word_phrases(vtt_path, fallback_text, total_dur, delay_sec=0.15):
-    """
-    قراءة توقيت الكلمات الحقيقي من ملف الـ VTT الناتج من محرك الصوت
-    وتقسيمها إلى بطاقات من 5 كلمات متزامنة بالمللي ثانية مع صوت المعلق!
-    """
+def parse_vtt_into_3word_phrases(vtt_path, fallback_text, total_dur, delay_sec=0.08):
     phrases = []
     if os.path.exists(vtt_path):
         try:
@@ -590,7 +417,7 @@ def parse_vtt_into_5word_phrases(vtt_path, fallback_text, total_dur, delay_sec=0
                 if not clean_words or et <= st:
                     continue
 
-                chunks = [" ".join(clean_words[i:i + 5]) for i in range(0, len(clean_words), 5)]
+                chunks = [" ".join(clean_words[i:i + 3]) for i in range(0, len(clean_words), 3)]
                 c_step = (et - st) / len(chunks)
                 for c_i, ch in enumerate(chunks):
                     c_start = round(st + c_i * c_step, 2)
@@ -603,16 +430,14 @@ def parse_vtt_into_5word_phrases(vtt_path, fallback_text, total_dur, delay_sec=0
         return phrases
 
     clean_words = re.sub(r'["\'«»*():;,.?!—-]', '', fallback_text).split()
-    chunks = [" ".join(clean_words[i:i + 5]) for i in range(0, len(clean_words), 5)] or ["..."]
+    chunks = [" ".join(clean_words[i:i + 3]) for i in range(0, len(clean_words), 3)] or ["..."]
     step = total_dur / len(chunks)
     return [(ch, round(idx * step, 2), round((idx + 1) * step, 2)) for idx, ch in enumerate(chunks)]
 
 
-def build_uncut_crystal_clear_audio(seg_idx, scene, out_wav):
+def build_uncut_short_audio(seg_idx, scene, out_wav):
     """
-    توليد الصوت الوثائقي الواضح بالكامل بدون أي فلتر قص (Zero Silenceremove / Zero Truncation)!
-    - يحول الصوت أولاً إلى WAV غير مضغوط ويقيس طوله الحقيقي بالمللي ثانية.
-    - يضيف 0.80 ثانية راحة في نهاية كل مشهد حتى تُسمع آخر كلمة وآخر نفس بوضوح تام 100%!
+    صوت واضح وسريع ومشوق للشورت بدون أي قص في نهاية الكلمات (Zero Truncation)
     """
     text = scene["narration"]
     sfx_key = scene["sfx"]
@@ -623,14 +448,14 @@ def build_uncut_crystal_clear_audio(seg_idx, scene, out_wav):
     sfx_ogg = f"seg_sfx_{seg_idx}.ogg"
 
     voice_ok = False
-    for v_name in [ENGLISH_VOICE, "en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural", "en-US-ChristopherNeural"]:
+    for v_name in [ENGLISH_VOICE, "en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural"]:
         try:
             subprocess.run([
-                "edge-tts", "--voice", v_name, "--rate=-2%",
+                "edge-tts", "--voice", v_name, "--rate=+6%",
                 "--text", text,
                 "--write-media", raw_mp3,
                 "--write-subtitles", raw_vtt
-            ], check=True, timeout=45, stderr=subprocess.DEVNULL)
+            ], check=True, timeout=30, stderr=subprocess.DEVNULL)
             if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
                 voice_ok = True
                 break
@@ -643,7 +468,6 @@ def build_uncut_crystal_clear_audio(seg_idx, scene, out_wav):
         with open(raw_mp3, "wb") as f:
             f.write(r.content)
 
-    # معالجة صوتية استوديو نقية (Warm Studio EQ + Broadcast Compressor) بدون أي silenceremove نهائياً!
     studio_audio_chain = (
         "highpass=f=70,"
         "equalizer=f=165:width_type=o:width=1.5:g=2.4,"
@@ -661,13 +485,13 @@ def build_uncut_crystal_clear_audio(seg_idx, scene, out_wav):
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", clean_voice_wav
     ], capture_output=True, text=True, check=True)
-    v_dur = float(probe.stdout.strip() or "18.0")
+    v_dur = float(probe.stdout.strip() or "4.5")
 
-    # إضافة 0.80 ثانية كاملة بعد انتهاء آخر حرف في الصوت لضمان عدم بتر أي كلمة نهائياً!
-    final_dur = round(v_dur + 0.80, 2)
-    timed_phrases = parse_vtt_into_5word_phrases(raw_vtt, text, final_dur, delay_sec=0.15)
+    # إضافة 0.35 ثانية بعد انتهاء الصوت لضمان وضوح آخر كلمة وعدم قطعها مع إيقاع سريع للشورت
+    final_dur = round(v_dur + 0.35, 2)
+    timed_phrases = parse_vtt_into_3word_phrases(raw_vtt, text, final_dur, delay_sec=0.08)
 
-    sfx_url, sfx_vol = SFX_LIBRARY.get(sfx_key, SFX_LIBRARY["waves"])
+    sfx_url, sfx_vol = SFX_LIBRARY.get(sfx_key, SFX_LIBRARY["whoosh"])
     try:
         r = requests.get(sfx_url, timeout=15)
         if r.ok and len(r.content) > 1000:
@@ -679,8 +503,8 @@ def build_uncut_crystal_clear_audio(seg_idx, scene, out_wav):
                 "-i", sfx_ogg,
                 "-i", clean_voice_wav,
                 "-filter_complex",
-                f"[1:a]atrim=0:{min(final_dur, 3.0)},afade=t=in:d=0.1,afade=t=out:st={max(min(final_dur, 3.0) - 0.6, 0.2)}:d=0.6,volume={sfx_vol}[s];"
-                f"[2:a]adelay=150|150,apad=pad_dur=0.65,volume=1.40[v];"
+                f"[1:a]atrim=0:{min(final_dur, 1.8)},afade=t=in:d=0.05,afade=t=out:st={max(min(final_dur, 1.8) - 0.35, 0.1)}:d=0.35,volume={sfx_vol}[s];"
+                f"[2:a]adelay=80|80,apad=pad_dur=0.25,volume=1.40[v];"
                 f"[0:a][s][v]amix=inputs=3:duration=first:dropout_transition=0[a]",
                 "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
             ], check=True)
@@ -693,17 +517,17 @@ def build_uncut_crystal_clear_audio(seg_idx, scene, out_wav):
         "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={final_dur}",
         "-i", clean_voice_wav,
         "-filter_complex",
-        "[1:a]adelay=150|150,apad=pad_dur=0.65,volume=1.40[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
+        "[1:a]adelay=80|80,apad=pad_dur=0.25,volume=1.40[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
         "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
     ], check=True)
     return final_dur, timed_phrases
 
 
-def render_widescreen_subtitle_png(phrase_text, png_path):
+def render_short_subtitle_png(phrase_text, png_path):
     font_file = ensure_english_font()
     img = Image.new("RGBA", (VIDEO_W, VIDEO_H), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    font = ImageFont.truetype(font_file, 46)
+    font = ImageFont.truetype(font_file, 52)
 
     words = phrase_text.upper().split()
     full_text = " ".join(words)
@@ -711,12 +535,12 @@ def render_widescreen_subtitle_png(phrase_text, png_path):
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
     x_pos = (VIDEO_W - w) // 2
-    y_pos = 920
+    y_pos = 1480
 
-    pad_x, pad_y = 34, 16
+    pad_x, pad_y = 34, 18
     draw.rounded_rectangle(
-        [(x_pos - pad_x, y_pos - pad_y), (x_pos + w + pad_x, y_pos + h + pad_y + 10)],
-        radius=22,
+        [(x_pos - pad_x, y_pos - pad_y), (x_pos + w + pad_x, y_pos + h + pad_y + 12)],
+        radius=24,
         fill=(10, 14, 22, 215),
         outline=(255, 200, 45, 235),
         width=3
@@ -741,26 +565,24 @@ def render_widescreen_subtitle_png(phrase_text, png_path):
 
 def build_scene_clip(index, scene, all_scene_imgs):
     audio_file = f"scene_audio_{index}.wav"
-    duration, timed_phrases = build_uncut_crystal_clear_audio(index, scene, audio_file)
+    duration, timed_phrases = build_uncut_short_audio(index, scene, audio_file)
 
     start_img = all_scene_imgs[index]
-    next_img = all_scene_imgs[index + 1] if index + 1 < len(all_scene_imgs) else None
-
     raw_ai_video = f"raw_ai_{index}.mp4"
     base_video = f"base_{index}.mp4"
     video_file = f"scene_{index}.mp4"
     fps = 30
     total_frames = int(round(duration * fps))
 
-    ai_animated = animate_scene_with_lipsync_or_wan(index, scene, start_img, next_img, raw_ai_video)
+    ai_animated = animate_scene_cinematic(index, start_img, scene["motion_prompt"], raw_ai_video)
 
     if ai_animated and os.path.exists(raw_ai_video):
         v_probe = subprocess.run([
             "ffprobe", "-v", "error", "-show_entries", "format=duration",
             "-of", "default=noprint_wrappers=1:nokey=1", raw_ai_video
         ], capture_output=True, text=True, check=True)
-        raw_vid_dur = max(float(v_probe.stdout.strip() or "3.0"), 1.0)
-        stretch_factor = round((duration + 0.25) / raw_vid_dur, 3)
+        raw_vid_dur = max(float(v_probe.stdout.strip() or "3.2"), 1.0)
+        stretch_factor = round((duration + 0.15) / raw_vid_dur, 3)
 
         subprocess.run([
             "ffmpeg", "-y", "-loglevel", "error",
@@ -768,9 +590,9 @@ def build_scene_clip(index, scene, all_scene_imgs):
             "-vf", (
                 f"setpts={stretch_factor}*PTS,"
                 f"minterpolate=fps={fps}:mi_mode=blend,"
-                f"tpad=stop_mode=clone:stop_duration=3,"
-                f"scale=2112:1188:force_original_aspect_ratio=increase,crop=2112:1188,"
-                f"crop={VIDEO_W}:{VIDEO_H}:'(iw-{VIDEO_W})/2 - 35*(t/{duration})':'(ih-{VIDEO_H})/2 - 20*(t/{duration})',"
+                f"tpad=stop_mode=clone:stop_duration=2,"
+                f"scale=1220:2168:force_original_aspect_ratio=increase,crop=1220:2168,"
+                f"crop={VIDEO_W}:{VIDEO_H}:'(iw-{VIDEO_W})/2':'(ih-{VIDEO_H})/2 - 35*(t/{duration})',"
                 f"cas=0.65,setsar=1,format=yuv420p"
             ),
             "-t", str(duration), "-r", str(fps),
@@ -781,8 +603,8 @@ def build_scene_clip(index, scene, all_scene_imgs):
             "ffmpeg", "-y", "-loglevel", "error",
             "-loop", "1", "-i", start_img,
             "-vf", (
-                f"scale=2304:1296:force_original_aspect_ratio=increase,crop=2304:1296,"
-                f"zoompan=z='min(zoom+0.0005,1.18)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                f"scale=1440:2560:force_original_aspect_ratio=increase,crop=1440:2560,"
+                f"zoompan=z='min(zoom+0.0020,1.22)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                 f"d={total_frames + 15}:s={VIDEO_W}x{VIDEO_H}:fps={fps},cas=0.6,setsar=1,format=yuv420p"
             ),
             "-t", str(duration), "-r", str(fps),
@@ -794,7 +616,7 @@ def build_scene_clip(index, scene, all_scene_imgs):
     last_stream = "[0:v]"
     for p_idx, (phrase, start_t, end_t) in enumerate(timed_phrases):
         png_file = f"sub_{index}_{p_idx}.png"
-        render_widescreen_subtitle_png(phrase, png_file)
+        render_short_subtitle_png(phrase, png_file)
         inputs_cmd.extend(["-loop", "1", "-t", str(duration), "-i", png_file])
         next_stream = f"[v{p_idx}]"
         inp_idx = p_idx + 2
@@ -803,9 +625,10 @@ def build_scene_clip(index, scene, all_scene_imgs):
         )
         last_stream = next_stream
 
-    fade_out_st = max(round(duration - 0.25, 2), 0.5)
+    # انتقال سريع وناعم (0.10 ثانية) مضمون 100% بدون أي تجميد في المشاهد الأخيرة!
+    fade_out_st = max(round(duration - 0.10, 2), 0.3)
     filter_parts.append(
-        f"{last_stream}fade=t=in:st=0:d=0.22,fade=t=out:st={fade_out_st}:d=0.25,format=yuv420p[vout]"
+        f"{last_stream}fade=t=in:st=0:d=0.08,fade=t=out:st={fade_out_st}:d=0.10,format=yuv420p[vout]"
     )
 
     subprocess.run([
@@ -822,7 +645,7 @@ def build_scene_clip(index, scene, all_scene_imgs):
     return video_file, duration
 
 
-def upload_long_video_to_youtube(video_path, title, refresh_token):
+def upload_to_youtube(video_path, title, refresh_token):
     creds = Credentials(
         None,
         refresh_token=refresh_token,
@@ -832,17 +655,17 @@ def upload_long_video_to_youtube(video_path, title, refresh_token):
     )
     youtube = build("youtube", "v3", credentials=creds)
 
-    clean_title = title[:95]
+    clean_title = f"{title[:72]} #shorts #history"[:95]
 
     body = {
         "snippet": {
             "title": clean_title,
             "description": (
                 f"{title}\n\n"
-                "Part 1 of Lost Ancient Engineering Secrets: How Ancient Rome built self-healing underwater concrete stronger than modern buildings.\n"
-                "#history #engineering #ancientrome #documentary #science"
+                "Watch Part 1 (Roman Self-Healing Concrete) linked right below this Short! 👇\n"
+                "#shorts #history #engineering #science #ancientmysteries"
             ),
-            "tags": ["roman concrete", "ancient engineering", "self healing concrete", "history documentary", "ancient rome", "science"],
+            "tags": ["ancient engineering", "lost inventions", "roman concrete", "antikythera mechanism", "greek fire", "shorts"],
             "categoryId": "27"
         },
         "status": {
@@ -852,36 +675,72 @@ def upload_long_video_to_youtube(video_path, title, refresh_token):
     }
     media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
     res = youtube.videos().insert(part="snippet,status", body=body, media_body=media).execute()
-    print(f"[YouTube Long-Form] Uploaded successfully: https://youtu.be/{res['id']}", flush=True)
+    print(f"[YouTube Short] Uploaded successfully: https://youtu.be/{res['id']}", flush=True)
+
+
+def upload_to_facebook_reels(video_path, title, page_id):
+    file_size = os.path.getsize(video_path)
+    init_res = requests.post(
+        f"{GRAPH_API}/{page_id}/video_reels",
+        data={"upload_phase": "start", "access_token": META_ACCESS_TOKEN},
+        timeout=30
+    ).json()
+
+    video_id = init_res["video_id"]
+    upload_url = init_res["upload_url"]
+
+    with open(video_path, "rb") as f:
+        video_bytes = f.read()
+
+    headers = {
+        "Authorization": f"OAuth {META_ACCESS_TOKEN}",
+        "offset": "0",
+        "file_size": str(file_size),
+        "Content-Type": "application/octet-stream"
+    }
+    requests.post(upload_url, headers=headers, data=video_bytes, timeout=240).raise_for_status()
+
+    finish_res = requests.post(
+        f"{GRAPH_API}/{page_id}/video_reels",
+        data={
+            "upload_phase": "finish",
+            "video_id": video_id,
+            "video_state": "PUBLISHED",
+            "description": f"{title} 🔥\n\n#history #engineering #facts #reels",
+            "access_token": META_ACCESS_TOKEN
+        },
+        timeout=60
+    ).json()
+    print(f"[Facebook Reels] Published: {finish_res}", flush=True)
 
 
 def assemble_and_publish():
-    title = "How The Ancient Romans Built Concrete Stronger Than Modern Buildings (Part 1)"
+    title = "5 Ancient Inventions Modern Science Still Can't Recreate!"
     uploaded_img_map = discover_uploaded_images_map()
     print(f"📸 Uploaded Gemini images found in 'images/': {len(uploaded_img_map)} ({sorted(uploaded_img_map.keys())})", flush=True)
 
     all_scene_imgs = []
-    for idx, scene in enumerate(ROMAN_CONCRETE_SCENES):
+    for idx, scene in enumerate(TRAILER_SCENES):
         img_file = f"scene_img_{idx}.jpg"
         obtain_scene_image(idx, scene["image_prompt"], img_file, uploaded_img_map)
         all_scene_imgs.append(img_file)
 
     scene_videos = []
     total_dur = 0.0
-    for idx, scene in enumerate(ROMAN_CONCRETE_SCENES):
-        print(f"--- Producing Uncut Scene {idx + 1}/15 ---", flush=True)
+    for idx, scene in enumerate(TRAILER_SCENES):
+        print(f"--- Producing Short Scene {idx + 1}/10 ---", flush=True)
         clip, dur = build_scene_clip(idx, scene, all_scene_imgs)
         scene_videos.append(clip)
         total_dur += dur
 
-    print(f"⏱️ Total Uncut Documentary Duration: {round(total_dur, 1)}s ({round(total_dur / 60, 2)} minutes)!", flush=True)
+    print(f"⏱️ Total Short Duration: {round(total_dur, 1)}s (Perfect Under-60s Trailer!)", flush=True)
 
     with open("inputs.txt", "w") as f:
         for v in scene_videos:
             f.write(f"file '{v}'\n")
 
-    merged_video = "merged_long.mp4"
-    final_video = "final_roman_concrete_part1.mp4"
+    merged_video = "merged_short.mp4"
+    final_video = "final_trailer_short.mp4"
 
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
@@ -901,12 +760,19 @@ def assemble_and_publish():
         "-ac", "2", "-b:a", "192k", "-movflags", "+faststart", final_video
     ], check=True)
 
-    print("🚀 Publishing Part 1 Long-Form Documentary to YouTube...", flush=True)
+    print("🚀 Publishing Trailer Short to YouTube & Facebook Reels...", flush=True)
     for token in YT_REFRESH_TOKENS:
         try:
-            upload_long_video_to_youtube(final_video, title, token)
+            upload_to_youtube(final_video, title, token)
         except Exception as e:
             print(f"[YouTube Error] {e}", flush=True)
+
+    if META_ACCESS_TOKEN:
+        for page_id in FB_PAGE_IDS:
+            try:
+                upload_to_facebook_reels(final_video, title, page_id)
+            except Exception as e:
+                print(f"[Facebook Error] {e}", flush=True)
 
 
 assemble_and_publish()
