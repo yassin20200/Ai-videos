@@ -5,21 +5,13 @@ on:
     - cron: '0 18 * * *'
   workflow_dispatch:
     inputs:
-      english_voice:
-        description: 'Select Realistic English Narrator Voice'
+      episode_mode:
+        description: 'نوع الإنتاج (دراما صينية عربية متعددة الأصوات)'
         required: true
-        default: 'en-US-AndrewMultilingualNeural'
+        default: 'chinese_drama_ep1'
         type: choice
         options:
-          - en-US-AndrewMultilingualNeural
-          - en-US-BrianMultilingualNeural
-          - en-US-ChristopherNeural
-          - en-GB-RyanNeural
-      custom_prompt:
-        description: 'Topic or Custom Prompt (Optional)'
-        required: false
-        default: ''
-        type: string
+          - chinese_drama_ep1
 
 jobs:
   build-and-publish:
@@ -35,23 +27,26 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install FFmpeg & Dependencies
+      - name: Install FFmpeg, Arabic Fonts & Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          sudo apt-get install -y ffmpeg libfreetype6-dev libfribidi-dev libharfbuzz-dev libraqm-dev fonts-hosny-amiri
           pip install --upgrade pip
-          pip install requests "httpx[http2]" google-api-python-client google-auth google-auth-oauthlib edge-tts gradio_client huggingface_hub pillow
+          pip install requests "httpx[http2]" google-api-python-client google-auth google-auth-oauthlib edge-tts gradio_client huggingface_hub pillow arabic-reshaper python-bidi
 
-      - name: Generate and Publish Video
+      - name: Generate and Publish Drama Episode
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
-          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
-          YT_REFRESH_TOKENS: ${{ secrets.YT_REFRESH_TOKENS }}
           FB_PAGE_IDS: ${{ secrets.FB_PAGE_IDS }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
-          ENGLISH_VOICE: ${{ inputs.english_voice }}
-          CUSTOM_PROMPT: ${{ inputs.custom_prompt }}
         run: |
           python main.py
+
+      - name: Save Ready Video for Mobile Download
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drama-episode-1-mp4
+          path: "final_drama_ep1.mp4"
+          retention-days: 5
