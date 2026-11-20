@@ -8,16 +8,22 @@ import subprocess
 from pathlib import Path
 import requests
 import httpx
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 from gradio_client import Client, handle_file
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 
-print("🚀 Starting Uncut 16:9 Documentary Studio (Part 2: The Antikythera Mechanism - Zero Lip-Sync)...", flush=True)
+try:
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+except ImportError:
+    subprocess.run(["pip", "install", "-q", "arabic-reshaper", "python-bidi"], check=True)
+    import arabic_reshaper
+    from bidi.algorithm import get_display
 
-VIDEO_W, VIDEO_H = 1920, 1080  # Horizontal 16:9 Long-Form YouTube format
-ENGLISH_VOICE = os.getenv("ENGLISH_VOICE", "en-US-AndrewMultilingualNeural").strip() or "en-US-AndrewMultilingualNeural"
+print("🎬 بدء إنتاج الحلقة 1 من مسلسل: دموع الملاك الصغير (أصوات تمثيلية متعددة + 9:16 واقعي)...", flush=True)
+
+VIDEO_W, VIDEO_H = 1080, 1920  # مقاس ريلز فيسبوك العمودي 9:16
+EPISODE_TITLE_LINE1 = "دموع الملاك الصغير"
+EPISODE_TITLE_LINE2 = "الحلقة 1"
 
 BUILTIN_HF_KEYS = [
     "hf_" + "NBRGGfSCxBBaMIFPJkoNLQdXCOcmlJXqYb",
@@ -45,210 +51,219 @@ for token_item in BUILTIN_HF_KEYS + RAW_ENV_TOKENS:
     if token_item and token_item not in HF_TOKENS:
         HF_TOKENS.append(token_item)
 
-YT_CLIENT_ID = os.getenv("YT_CLIENT_ID", "").strip()
-YT_CLIENT_SECRET = os.getenv("YT_CLIENT_SECRET", "").strip()
-YT_REFRESH_TOKENS = [t.strip() for t in os.getenv("YT_REFRESH_TOKENS", "").split(",") if t.strip()]
+FB_PAGE_IDS = [p.strip() for p in os.getenv("FB_PAGE_IDS", "").split(",") if p.strip()]
+META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "").strip()
 
-FONT_BOLD_PATH = "Montserrat-ExtraBold.ttf"
-MASTER_SEED = 202602
+GRAPH_API = "https://graph.facebook.com/v21.0"
+FONT_PATH = "Cairo-Black.ttf"
+MASTER_SEED = 707101
 
 os.environ.pop("HF_TOKEN", None)
 EXHAUSTED_ZEROGPU_TOKENS = set()
 
-SFX_LIBRARY = {
-    "underwater": ("https://actions.google.com/sounds/v1/water/air_woosh_underwater.ogg", 0.22),
-    "waves": ("https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg", 0.18),
-    "impact": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.24),
-    "scan": ("https://actions.google.com/sounds/v1/science_fiction/sci_fi_osh.ogg", 0.20),
-    "whoosh": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.20),
-    "fire": ("https://actions.google.com/sounds/v1/weather/wind_blowing.ogg", 0.20)
+ARABIC_RESHAPER = arabic_reshaper.ArabicReshaper(configuration={
+    "delete_harakat": True,
+    "support_ligatures": False
+})
+
+# طاقم الأصوات التمثيلية العربية (كل شخصية لها صوت ونبرة مميزة بدون أي تشابه!)
+CHARACTER_CAST = {
+    "meimei": {
+        "voices": ["ar-EG-SalmaNeural", "ar-SA-ZariyahNeural"],
+        "rate": "-4%",
+        "pitch_factor": 1.18,  # رفع الطبقة لصوت طفلة بريئة عمرها 5 سنوات
+        "vol": 1.45
+    },
+    "chef": {
+        "voices": ["ar-JO-TaimNeural", "ar-SA-HamedNeural"],
+        "rate": "-2%",
+        "pitch_factor": 1.00,  # صوت طباخ طيب ودافئ
+        "vol": 1.38
+    },
+    "customer": {
+        "voices": ["ar-EG-ShakirNeural", "ar-AE-HamdanNeural"],
+        "rate": "+3%",
+        "pitch_factor": 0.96,  # صوت زبون حاد ومغرور
+        "vol": 1.42
+    },
+    "woman": {
+        "voices": ["ar-SA-ZariyahNeural", "ar-EG-SalmaNeural"],
+        "rate": "+2%",
+        "pitch_factor": 0.95,  # صوت امرأة قاسية
+        "vol": 1.38
+    },
+    "grandpa": {
+        "voices": ["ar-SA-HamedNeural", "ar-JO-TaimNeural"],
+        "rate": "-8%",
+        "pitch_factor": 0.89,  # صوت جد عجوز وقور وعميق
+        "vol": 1.42
+    },
+    "bystander": {
+        "voices": ["ar-AE-HamdanNeural", "ar-EG-ShakirNeural"],
+        "rate": "+5%",
+        "pitch_factor": 1.02,
+        "vol": 1.38
+    },
+    "ceo": {
+        "voices": ["ar-SA-HamedNeural", "ar-JO-TaimNeural"],
+        "rate": "-4%",
+        "pitch_factor": 0.94,  # صوت الملياردير البارد العميق ذو الهيبة
+        "vol": 1.45
+    }
+}
+
+# مؤثرات صوتية درامية سينمائية
+DRAMA_SFX = {
+    "soft_chime": ("https://actions.google.com/sounds/v1/cartoon/pop.ogg", 0.22),
+    "boom": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.36),
+    "slam": ("https://actions.google.com/sounds/v1/impacts/crash.ogg", 0.32),
+    "whoosh": ("https://actions.google.com/sounds/v1/foley/whoosh.ogg", 0.26),
+    "heartbeat": ("https://actions.google.com/sounds/v1/impacts/heavy_thump.ogg", 0.34),
+    "rain_wind": ("https://actions.google.com/sounds/v1/weather/wind_blowing.ogg", 0.16)
 }
 
 STYLE_PREFIX = (
-    "Masterpiece stylized 3D cinematic documentary render, Unreal Engine 5 studio lighting, "
-    "rich textures, dramatic shadows, ultra-crisp 8k horizontal 16:9 widescreen, no text, no watermarks. "
+    "Photorealistic live-action Chinese TV drama still frame, shot on ARRI Alexa, shallow depth of field, "
+    "warm cinematic lighting, ultra-realistic 8k vertical 9:16, no text, no watermarks. "
 )
 
-# 15 مشهداً متكاملاً للجزء الثاني (آلية أنتيكيثيرا - بدون أي Lip-Sync!)
-ANTIKYTHERA_SCENES = [
+# الحلقة الأولى الكاملة: 15 مشهداً بحوارات تمثيلية حية (~3.5 إلى 4.2 دقائق)
+EPISODE_1_SCENES = [
     {
         "id": 0,
-        "sfx": "underwater",
-        "narration": (
-            "In the spring of nineteen hundred, a violent storm blew a crew of Greek sponge divers off course near the tiny rocky island of Antikythera. "
-            "When the waves calmed, a diver named Elias Stadiatis dropped one hundred and fifty feet into the freezing Aegean Sea. "
-            "Minutes later, he shot back to the surface trembling in terror, claiming he had found a seabed graveyard of rotting naked corpses and dead horses. "
-            "What he had actually discovered were two-thousand-year-old marble and bronze statues from an ancient sunken treasure ship."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}A 1900 Greek sponge diver in a brass helmet illuminating fallen ancient marble statues on the dark seabed.",
-        "motion_prompt": "Cinematic 3D underwater camera glide as the diver's beam sweeps across ancient statues resting on the dark ocean floor, floating particles"
+        "motion_prompt": "Subtle cinematic live-action shot, the adorable 5-year-old girl blinks innocently holding up a coin in the warm restaurant, gentle camera push-in, no distortion",
+        "image_prompt": f"{STYLE_PREFIX}A 5-year-old East Asian girl in a worn beige teddy-bear sweatshirt and blue cloth bag holding up a single coin in a warm Chinese restaurant.",
+        "dialogue": [
+            {"speaker": "meimei", "sfx": "soft_chime", "text": "يا عَمُّ، أُريدُ خُبزَةً كَبيرَةً... خُبزَةً واحِدَةً تَكفيني لِأَشبَع!"},
+            {"speaker": "chef", "sfx": None, "text": "بِكُلِّ سُرورٍ يا صَغيرَتي الجَميلَة... تَفَضَّلي هَذِهِ الخُبزَةَ السّاخِنَة."}
+        ]
     },
     {
         "id": 1,
-        "sfx": "impact",
-        "narration": (
-            "Over the next several months, divers hauled up priceless artifacts from a massive Roman-era cargo ship that sank around seventy BC: "
-            "towering bronze gods, delicate glassware, and gold jewelry. "
-            "Tossed aside in a museum courtyard was an ugly, barnacle-crusted green lump of corroded metal about the size of a shoebox. "
-            "No one cared about it until May of nineteen oh-two, when the lump dried out, cracked right down the middle, "
-            "and revealed precision-cut triangular bronze gear wheels hidden inside."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}Macro close-up of a corroded green bronze chunk cracked open on a museum table revealing sharp triangular bronze gears inside.",
-        "motion_prompt": "Slow 3D macro camera push-in toward the sharp ancient bronze gear teeth emerging from the cracked green marine crust"
+        "motion_prompt": "Warm cinematic live-action moment, the kind chef smiles gently offering a brown egg to the surprised little girl, subtle warm light",
+        "image_prompt": f"{STYLE_PREFIX}A kind Chinese restaurant chef in a green shirt offering a warm boiled egg to the little girl holding a steamed bun.",
+        "dialogue": [
+            {"speaker": "chef", "sfx": "soft_chime", "text": "انتَظِري قَليلاً... خُذي هَذِهِ البَيضَةَ أَيضاً، العَمُّ يُهديكِ إِيّاها."},
+            {"speaker": "meimei", "sfx": None, "text": "شُكراً لَكَ يا عَمُّ! سَأَضَعُها في الحَقيبَةِ حَتّى لا تَبرُد."}
+        ]
     },
     {
         "id": 2,
-        "sfx": "whoosh",
-        "narration": (
-            "Archaeologists staring at those corroded gears felt the floor drop beneath them. "
-            "According to everything history books taught, complex interlocking gear trains like this did not appear until medieval European cathedral clocks "
-            "in the fourteenth century—more than one thousand four hundred years after this ship sank. "
-            "Finding a precision geared machine from ancient Greece was like opening an Egyptian pyramid and discovering a jet engine."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}A glowing ancient Greek bronze geared mechanism floating in golden light contrasted against a towering medieval stone clock tower.",
-        "motion_prompt": "Dramatic 3D camera sweep gliding from the glowing ancient bronze gear device toward the misty medieval cathedral clock tower"
+        "motion_prompt": "Emotional close-up live-action shot, the little girl blinks softly looking with longing eyes at the warm glass milk bottle on the counter",
+        "image_prompt": f"{STYLE_PREFIX}Close-up of the 5-year-old girl staring timidly at a small glass bottle of warm white milk on the restaurant counter.",
+        "dialogue": [
+            {"speaker": "meimei", "sfx": "whoosh", "text": "يا عَمُّ... هَل يُمكِنُ أَن تُعطِيَني زُجاجَةَ حَليبٍ أَيضاً؟"},
+            {"speaker": "customer", "sfx": "boom", "text": "انظُروا! هَذِهِ الطِّفلَةُ تَستَغِلُّ طِيبَةَ الرَّجُلِ!"},
+            {"speaker": "chef", "sfx": "soft_chime", "text": "لا بَأسَ يا بُنَيَّتي... خُذي الحَليبَ ولا تَهتَمّي لِأَحَد."}
+        ]
     },
     {
         "id": 3,
-        "sfx": "whoosh",
-        "narration": (
-            "Soon known as the Antikythera Mechanism, the fragile artifact eventually split into eighty-two corroded fragments inside the National Archaeological Museum in Athens. "
-            "Two thousand years underwater had fused the delicate bronze plates into solid mineralized stone. "
-            "For over seventy years, historians could only guess what it did, because trying to pry the layers apart would instantly crumble the greatest machine of antiquity into dust."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}Overhead museum shot of 82 corroded green bronze fragments laid out on black velvet trays under warm spotlights.",
-        "motion_prompt": "Smooth 3D overhead camera pan gliding slowly across the 82 ancient corroded bronze fragments on black velvet trays"
+        "motion_prompt": "Cinematic live-action shot, gentle steam rises from the tray of golden roasted chicken drumsticks as the little girl looks hopefully",
+        "image_prompt": f"{STYLE_PREFIX}The little girl looking shyly over a steaming metal tray of golden roasted chicken drumsticks at the counter.",
+        "dialogue": [
+            {"speaker": "meimei", "sfx": "soft_chime", "text": "يا عَمُّ... رائِحَتُهُ طَيِّبَةٌ جِدّاً! هَل يُمكِنُني أَن آخُذَ قِطعَةَ دَجاجٍ واحِدَةً أَيضاً؟"}
+        ]
     },
     {
         "id": 4,
-        "sfx": "scan",
-        "narration": (
-            "The first real breakthrough arrived in nineteen seventy-one, when physicist Derek de Solla Price teamed up with Greek radiologist Charalampos Karakalos "
-            "to blast powerful gamma rays and X-rays straight through the corroded fragments. "
-            "When the glowing X-ray plates developed, the scientific world was stunned. "
-            "Hidden inside the green crust were at least thirty interlocking hand-cut bronze gears, packed into a wooden frame tighter than a modern Swiss watch."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}Glowing blue-and-white X-ray plates hanging on a lightbox revealing thirty interlocking toothed gears inside corroded bronze.",
-        "motion_prompt": "3D laboratory animation, camera pushes smoothly toward the glowing X-ray lightbox illuminating the hidden gear silhouettes"
+        "motion_prompt": "Tense cinematic live-action scene, the angry man glares harshly down at the little girl while the woman beside him frowns coldly",
+        "image_prompt": f"{STYLE_PREFIX}Over-the-shoulder shot of an angry Chinese man in a dark grey shirt scolding the little girl inside the restaurant.",
+        "dialogue": [
+            {"speaker": "customer", "sfx": "slam", "text": "كفى يا فتاة! النّاسُ يَرحَمونَكِ فَيُعطونَكِ خُبزاً وبَيضاً وحَليباً، والآنَ تَطلُبينَ الدَّجاجَ أَيضاً؟!"},
+            {"speaker": "woman", "sfx": "boom", "text": "يا صاحِبَ المَطعَمِ، أَنتَ تَفتَحُ لِلتِّجارَةِ لا لِلصَّدَقَةِ! الشَّفَقَةُ فَضلٌ ولَيسَت دَيناً... هَل فَهِمتِ يا طِفلَةُ؟"}
+        ]
     },
     {
         "id": 5,
-        "sfx": "scan",
-        "narration": (
-            "Still, the true purpose of the machine remained only half-understood until two thousand and five, "
-            "when an international team flew an eight-ton high-resolution CT scanner called the Bladerunner into Athens. "
-            "Slicing through the solid metal digitally in three dimensions, the scanner uncovered over three thousand microscopic Greek letters "
-            "engraved directly onto the hidden inner plates—an actual ancient user manual explaining how to operate the world's first analog computer."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}A massive industrial CT scanner shining a glowing cyan laser grid over the bronze fragment with a 3D holographic scan floating above.",
-        "motion_prompt": "3D high-tech visualization, a glowing cyan CT scanner laser sweeps across the bronze fragment as golden 3D Greek letters illuminate"
+        "motion_prompt": "Heartbreaking live-action close-up, glistening teardrops roll slowly down the little girl's cheeks as she looks down sadly",
+        "image_prompt": f"{STYLE_PREFIX}Heartbreaking extreme close-up of the 5-year-old girl looking down with tears rolling down her soft cheeks.",
+        "dialogue": [
+            {"speaker": "meimei", "sfx": "heartbeat", "text": "آسِفَةٌ يا عَمُّ... لَم أَقصِد إِزعاجَكُم... لا أُريدُ قِطعَةَ الدَّجاجِ بَعدَ الآن."},
+            {"speaker": "chef", "sfx": "soft_chime", "text": "خُذيها يا صَغيرَتي... خُذيها ولا تَبكي."}
+        ]
     },
     {
         "id": 6,
-        "sfx": "whoosh",
-        "narration": (
-            "Using those three-dimensional scans, engineers finally reconstructed what the Antikythera Mechanism looked like when it was brand new. "
-            "It sat inside a polished wooden case with a single brass hand-crank on the side. "
-            "Turn that crank forward or backward to any date in history, and golden pointers spun around the front dial "
-            "to calculate the exact positions of the Sun, the Moon, and all five planets visible to the naked eye: Mercury, Venus, Mars, Jupiter, and Saturn."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}Fully restored gleaming golden-bronze Antikythera Mechanism in a dark wooden case with a brass side crank and planetary pointers.",
-        "motion_prompt": "Majestic 3D mechanical animation, golden pointers and concentric bronze rings rotate smoothly around the restored front face of the ancient computer"
+        "motion_prompt": "Deeply emotional live-action shot, the crying little girl holds up a crumpled hospital paper with trembling small hands",
+        "image_prompt": f"{STYLE_PREFIX}The crying 5-year-old girl holding a plastic bag with a chicken leg and reaching out a folded white hospital report.",
+        "dialogue": [
+            {"speaker": "meimei", "sfx": "heartbeat", "text": "يا عَمُّ، أَنا لَستُ طَمّاعَةً... الخُبزُ وَحدَهُ يَكفيني!"},
+            {"speaker": "meimei", "sfx": None, "text": "لَكِنَّ أُمّي مَريضَةٌ جِدّاً في المُستَشفى، والطَّبيبُ قالَ إِنَّها نَحيفَةٌ جِدّاً ولَن تَحتَمِلَ العِلاجَ إِذا لَم تَأكُلِ اللّحمَ!"}
+        ]
     },
     {
         "id": 7,
-        "sfx": "whoosh",
-        "narration": (
-            "Right near the center of the front dial sat one of the most charming pieces of engineering ever built: "
-            "a tiny metallic sphere painted half glossy black and half bright silver. "
-            "Driven by a miniature bevel gear hidden behind the faceplate, this little sphere rotated smoothly as you turned the hand crank, "
-            "automatically displaying the exact phase of the Moon—new, crescent, quarter, or full—for any night you chose."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}Macro 3D close-up of a tiny half-black and half-silver metallic sphere rotating on a miniature bronze gear on the front dial.",
-        "motion_prompt": "Macro 3D mechanical animation, the gleaming half-black and half-silver moon sphere rotates smoothly on its miniature bronze gear"
+        "motion_prompt": "Dramatic cinematic reaction shot, the man stares in pale shock and regret at the hospital diagnosis paper in his hands",
+        "image_prompt": f"{STYLE_PREFIX}Close-up of the man in the dark grey shirt looking deeply shocked and guilty while reading the hospital paper.",
+        "dialogue": [
+            {"speaker": "customer", "sfx": "boom", "text": "سَرَطانُ الدَّمِ... في مَرحَلَتِهِ المُتَأَخِّرَةِ؟! يا إِلَهي... ماذا فَعَلتُ؟!"},
+            {"speaker": "customer", "sfx": "heartbeat", "text": "آسِفٌ يا صَغيرَتي! لَقَد قُلتُ كَلاماً قاسِياً وأَعمى... يا صاحِبَ المَطعَمِ! أَعطِها عَشرَ قِطَعِ دَجاجٍ إِضافِيَّةً كُلُّها عَلى حِسابي!"}
+        ]
     },
     {
         "id": 8,
-        "sfx": "impact",
-        "narration": (
-            "But hidden deep behind that moon dial was a mechanical trick that left modern physicists speechless. "
-            "Because the Moon orbits Earth in an oval ellipse rather than a perfect circle, it actually speeds up when closer to Earth and slows down when farther away. "
-            "Somehow, the ancient Greek inventor modeled this variable speed using two stacked bronze gears mounted slightly off-center, "
-            "linked by a tiny metal pin sliding inside a slot—turning steady hand-cranking into an exact mathematical simulation of elliptical lunar motion."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}X-ray mechanical cutaway showing two stacked off-center golden bronze gears linked by a glowing pin sliding inside a curved slot.",
-        "motion_prompt": "Precision 3D engineering animation, the stacked off-center bronze gears rotate smoothly as the golden pin glides inside the curved slot"
+        "motion_prompt": "Warm sunlit cinematic live-action shot, the little girl smiles brightly and waves goodbye outside the glass restaurant door",
+        "image_prompt": f"{STYLE_PREFIX}The little girl outside the glass restaurant door waving goodbye with a pure bright smile while holding her sack of bottles.",
+        "dialogue": [
+            {"speaker": "meimei", "sfx": "soft_chime", "text": "لا يا عَمُّ، هذا يَكفي تَماماً! أُمّي لَن تَستَطيعَ إِنهاءَ كُلِّ هذا الطَّعامِ."},
+            {"speaker": "meimei", "sfx": None, "text": "إِلى اللِّقاءِ يا عَمّي... إِلى اللِّقاءِ يا خالَتي!"},
+            {"speaker": "chef", "sfx": None, "text": "رافَقَتكِ السَّلامَةُ يا أَنقى قَلبٍ في هَذِهِ المَدينَةِ!"}
+        ]
     },
     {
         "id": 9,
-        "sfx": "whoosh",
-        "narration": (
-            "Flip the bronze computer over, and the back face is just as mind-blowing, dominated by two large spiral tracks shaped like bronze vinyl records. "
-            "The upper spiral tracked the nineteen-year Metonic cycle, a precise calendar that synchronized the solar year with lunar months across two hundred and thirty-five moons. "
-            "And tucked neatly beside it sat a tiny four-year dial that counted down the exact arrival of the ancient Olympic Games."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}Detailed 3D shot of the back face of the bronze Antikythera Mechanism with two ornate spiral dials and a four-year Olympic Games dial.",
-        "motion_prompt": "Smooth 3D close-up pan across the ornate bronze spiral tracks and sliding pointers on the back face of the mechanism"
+        "motion_prompt": "Dramatic outdoor live-action shot, the distinguished silver-haired elderly man clutches his chest in pain and falls heavily to the sunlit pavement",
+        "image_prompt": f"{STYLE_PREFIX}A wealthy 65-year-old East Asian grandfather in a tailored black Chinese suit collapsing on a sunlit city sidewalk clutching his chest.",
+        "dialogue": [
+            {"speaker": "grandpa", "sfx": "boom", "text": "آه... قَلبي... لا أَستَطيعُ التَّنَفُّسَ... دَوائي في جَيبي..."},
+            {"speaker": "bystander", "sfx": "whoosh", "text": "انظُروا! رَجُلٌ عَجوزٌ سَقَطَ عَلى الأَرضِ!"}
+        ]
     },
     {
         "id": 10,
-        "sfx": "impact",
-        "narration": (
-            "The lower spiral on the back was the most awe-inspiring feature of all: the two-hundred-and-twenty-three-month Saros eclipse predictor. "
-            "As the sliding needle traveled along the spiral groove, tiny engraved glyphs warned the user of upcoming solar and lunar eclipses down to the exact month, day, and hour. "
-            "Astonishingly, the microscopic Greek notes beside each glyph even predicted the direction of the shadow and whether the eclipsed moon would glow blood-red or dark black."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}The lower bronze spiral dial glowing in the foreground with a breathtaking blood-red lunar eclipse and golden solar eclipse unfolding behind it.",
-        "motion_prompt": "Cinematic 3D cosmic animation, the bronze eclipse dial glows while the blood-red lunar eclipse and golden solar corona shimmer in the night sky"
+        "motion_prompt": "Backlit sunlit live-action shot, the tiny 5-year-old girl stands bravely amidst hesitant adults looking worriedly at the fallen old man",
+        "image_prompt": f"{STYLE_PREFIX}Backlit by golden afternoon sun, the little girl standing bravely between hesitant adults crowding on the sidewalk.",
+        "dialogue": [
+            {"speaker": "bystander", "sfx": "whoosh", "text": "يا صَغيرَتي لا تَقتَرِبي مِنهُ! إِذا تَعَلَّقَ بِكِ أَهلُهُ فَسَيُكَلِّفونَ والِدَيكِ مالاً كَثيراً جِدّاً!"},
+            {"speaker": "meimei", "sfx": "heartbeat", "text": "لَكِنَّ الجَدَّ يَختَنِقُ يا عَمُّ! أُمّي قالَت إِنَّنا لا نَترُكُ المَريضَ وَحدَهُ أَبَداً!"}
+        ]
     },
     {
         "id": 11,
-        "sfx": "fire",
-        "narration": (
-            "Who on Earth possessed both the genius astronomical math and the watchmaker-level metallurgy to file two hundred and twenty-three gear teeth by hand "
-            "within a fraction of a millimeter? "
-            "Clues in the regional calendar names engraved on the dials point directly to the school of the legendary inventor Archimedes of Syracuse, "
-            "or the astronomer Hipparchus on the island of Rhodes, who were famed in Roman texts for building mechanical bronze globes of the heavens."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}Over-the-shoulder view of an ancient Greek craftsman's hands filing tiny gear teeth into a shiny bronze wheel by warm oil-lamp light.",
-        "motion_prompt": "Warm 3D historical animation, oil-lamp light flickers softly over the ancient craftsman's hands filing the gleaming bronze gear teeth"
+        "motion_prompt": "Touching cinematic live-action close-up, the little girl gently wipes the elderly man's forehead as he slowly opens his eyes looking at her",
+        "image_prompt": f"{STYLE_PREFIX}The little girl kneeling beside the fallen silver-haired grandfather on the sidewalk helping him with water and a pill.",
+        "dialogue": [
+            {"speaker": "meimei", "sfx": "soft_chime", "text": "لا تَخَف يا جَدّي... خُذ حَبَّةَ الدَّواءِ وَاشرَب قَليلاً، سَتُصبِحُ بِخَيرٍ حالاً!"},
+            {"speaker": "grandpa", "sfx": "heartbeat", "text": "يا بُنَيَّتي... لَقَد أَنقَذتِ حَياتي... مَن أَنتِ يا مَلاكي الصَّغيرَ؟"}
+        ]
     },
     {
         "id": 12,
-        "sfx": "fire",
-        "narration": (
-            "This raises history's most haunting question: if the ancient Greeks built handheld bronze computers in one hundred BC, "
-            "why did this technology vanish from human civilization for fourteen centuries? "
-            "The tragic answer is simple: bronze was infinitely valuable and endlessly recyclable. "
-            "When empires collapsed, ancient scientific instruments weren't saved in museums—they were thrown into blazing furnaces and melted down into swords, coins, and bells. "
-            "The Antikythera Mechanism survived only because a deadly storm hid it at the bottom of the ocean."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}Inside a dark ancient foundry, glowing molten bronze pours into molds while broken bronze astrolabes and gear wheels wait beside the furnace.",
-        "motion_prompt": "Dramatic 3D foundry animation, glowing orange sparks rise as molten bronze pours beside piles of ancient discarded bronze gears"
+        "motion_prompt": "Ultra-cinematic live-action arrival shot, the handsome billionaire CEO in a black suit and gold-rimmed glasses strides forward intensely beside luxury black sedans",
+        "image_prompt": f"{STYLE_PREFIX}A strikingly handsome 28-year-old billionaire CEO in an all-black suit and gold-rimmed glasses stepping out of a black luxury sedan.",
+        "dialogue": [
+            {"speaker": "ceo", "sfx": "boom", "text": "أَبي! هَل أَنتَ بِخَيرٍ؟ ماذا حَدَثَ هُنا بِحَقِّ الجَحيمِ؟!"},
+            {"speaker": "grandpa", "sfx": None, "text": "اهدَأ يا شين... لَولا هَذِهِ الطِّفلَةُ البَريئَةُ، لَكُنتُ قَد فارَقتُ الحَياةَ الآنَ!"}
+        ]
     },
     {
         "id": 13,
-        "sfx": "whoosh",
-        "narration": (
-            "Today, modern watchmakers and scientists at University College London have finally machined working brass replicas directly from the three-dimensional CT scans, "
-            "proving that every single gear tooth, epicycle, and pointer meshes together with breathtaking mechanical accuracy. "
-            "Every time that replica turns, it reminds us that ancient engineers were never primitive—they were just one shipwreck away from being forgotten completely."
-        ),
-        "image_prompt": f"{STYLE_PREFIX}A gleaming modern glass-cased working brass replica of the Antikythera Mechanism on a dark desk with polished golden gears turning.",
-        "motion_prompt": "Ultra-clean 3D horology camera orbit around the glass-cased modern brass replica as its polished golden gears mesh and turn"
+        "motion_prompt": "Shocking dramatic close-up, the handsome billionaire CEO's eyes widen behind his gold-rimmed glasses staring at the carved half white jade pendant",
+        "image_prompt": f"{STYLE_PREFIX}Dramatic close-up of the billionaire CEO staring in utter shock at half of a white jade pendant hanging on a red string around the little girl's neck.",
+        "dialogue": [
+            {"speaker": "ceo", "sfx": "boom", "text": "مَهلاً... هَذِهِ التَّميمَةُ اليَشمِيَّةُ المَكسورَةُ في عُنُقِكِ... وهَذِهِ العُيونُ... مُستَحيلٌ!"},
+            {"speaker": "meimei", "sfx": "heartbeat", "text": "هَل تَعرِفُ أُمّي يا عَمّو؟ هِيَ الَّتي أَعطَتني إِيّاها، وَهِيَ تَنتَظِرُني في المُستَشفى الآنَ!"}
+        ]
     },
     {
         "id": 14,
-        "sfx": "fire",
-        "narration": (
-            "The Antikythera Mechanism proved that ancient civilizations mastered precision computing long before modern history gives them credit for. "
-            "And this ancient mystery is only Part Two of our series. "
-            "In Part Three, we uncover the most terrifying secret chemical weapon of the ancient world: "
-            "Byzantine Greek Fire—a mysterious liquid flame that exploded on contact with water and saved an entire empire. "
-            "Subscribe now so you don't miss Part Three, and check the link below if you haven't watched Part One on Roman self-healing concrete!"
-        ),
-        "image_prompt": f"{STYLE_PREFIX}The glowing bronze Antikythera Mechanism on the left fading beside an ancient Byzantine warship blasting roaring green-and-orange Greek Fire across dark waves on the right.",
-        "motion_prompt": "Epic 3D cinematic closing animation, blazing green-and-orange Greek Fire erupts across the stormy waves beside the gleaming golden bronze gears"
+        "motion_prompt": "Epic golden-hour cliffhanger closing shot, the billionaire CEO kneels intently in front of the innocent little girl while the grandfather watches quietly",
+        "image_prompt": f"{STYLE_PREFIX}Golden hour closing shot of the billionaire CEO kneeling in front of the little girl holding her shoulders gently as she looks up.",
+        "dialogue": [
+            {"speaker": "ceo", "sfx": "heartbeat", "text": "خُذيني إِلى المُستَشفى فَوراً يا صَغيرَتي... يَجِبُ أَن أَرى أُمَّكِ في هَذِهِ اللّحظَةِ!"},
+            {"speaker": "grandpa", "sfx": "boom", "text": "تَابِعوا الصَّفحَةَ الآنَ لِتَرَوا صَدمَةَ اللِّقاءِ في المُستَشفى... في الحَلقَةِ الثّانِيَةِ غَداً!"}
+        ]
     }
 ]
 
@@ -294,7 +309,7 @@ class PinnedSpace:
                     if not msg.get("success"):
                         raise RuntimeError(str(msg.get("output"))[:300])
                     return msg["output"]["data"]
-        raise RuntimeError("Connection ended without receiving video")
+        raise RuntimeError("انتهى الاتصال دون استلام الفيديو")
 
     def download_video(self, output_data, dst):
         def find_url_or_path(obj):
@@ -314,31 +329,36 @@ class PinnedSpace:
 
         file_url = find_url_or_path(output_data)
         if not file_url:
-            raise RuntimeError(f"Video URL not found: {output_data}")
+            raise RuntimeError(f"لم يتم العثور على رابط الفيديو: {output_data}")
         content = self.http.get(file_url).content
         if len(content) < 10000:
-            raise RuntimeError("Downloaded video file is too small")
+            raise RuntimeError("ملف الفيديو المحمل صغير جداً")
         Path(dst).write_bytes(content)
 
 
-def ensure_english_font():
-    if os.path.exists(FONT_BOLD_PATH) and os.path.getsize(FONT_BOLD_PATH) > 10000:
-        return FONT_BOLD_PATH
+def ensure_arabic_font():
+    if os.path.exists(FONT_PATH) and os.path.getsize(FONT_PATH) > 10000:
+        return FONT_PATH
     try:
-        url = "https://github.com/google/fonts/raw/main/ofl/montserrat/static/Montserrat-ExtraBold.ttf"
+        url = "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Black.ttf"
         r = requests.get(url, timeout=30)
         if r.ok:
-            with open(FONT_BOLD_PATH, "wb") as f:
+            with open(FONT_PATH, "wb") as f:
                 f.write(r.content)
-            return FONT_BOLD_PATH
+            return FONT_PATH
     except Exception:
         pass
     return "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
+def reshape_ar(text):
+    clean = re.sub(r'[\u0617-\u061A\u064B-\u0652]', '', text)
+    return get_display(ARABIC_RESHAPER.reshape(clean))
+
+
 def discover_uploaded_images_map():
     valid_exts = (".jpg", ".jpeg", ".png", ".webp", ".jfif")
-    ignore_prefixes = ("scene_", "stage_", "temp_", "sub_", "base_", "raw_", "stretched_", "nuclear_")
+    ignore_prefixes = ("scene_", "stage_", "temp_", "sub_", "base_", "raw_", "badge_")
     raw_num_map = {}
 
     for root_dir in ["images", "scenes", "."]:
@@ -362,25 +382,21 @@ def discover_uploaded_images_map():
     return raw_num_map
 
 
-def save_clean_widescreen_image(src_path, dst_file):
+def save_clean_vertical_image(src_path, dst_file):
     img = Image.open(src_path).convert("RGB")
     src_w, src_h = img.size
     target_ratio = VIDEO_W / VIDEO_H
     src_ratio = src_w / src_h
 
-    if abs(src_ratio - target_ratio) > 0.25:
-        bg = img.resize((VIDEO_W, VIDEO_H), Image.Resampling.LANCZOS).filter(ImageFilter.GaussianBlur(28))
-        bg = ImageEnhance.Brightness(bg).enhance(0.55)
-        new_h = VIDEO_H
-        new_w = int(src_w * (new_h / src_h))
-        fg = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-        bg.paste(fg, ((VIDEO_W - new_w) // 2, 0))
-        img = bg
-    else:
-        img = img.resize((VIDEO_W, VIDEO_H), Image.Resampling.LANCZOS)
+    if src_ratio > target_ratio * 1.15:
+        # قص مركزي نظيف للمقاس العمودي 9:16
+        new_w = int(src_h * target_ratio)
+        left = (src_w - new_w) // 2
+        img = img.crop((left, 0, left + new_w, src_h))
 
+    img = img.resize((VIDEO_W, VIDEO_H), Image.Resampling.LANCZOS)
     img = ImageEnhance.Contrast(img).enhance(1.04)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=110, threshold=3))
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=108, threshold=3))
     img.save(dst_file, "JPEG", quality=98)
 
 
@@ -393,8 +409,8 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
     scene_num = index + 1
     if scene_num in uploaded_map:
         src = uploaded_map[scene_num]
-        save_clean_widescreen_image(src, dst_jpg)
-        print(f"📸 Using your uploaded Gemini image for Scene {scene_num}: ({src})!", flush=True)
+        save_clean_vertical_image(src, dst_jpg)
+        print(f"📸 تم تحميل صورتك الواقعية للمشهد {scene_num}: ({src})!", flush=True)
         return
 
     image_pool = HF_TOKENS[7:] + HF_TOKENS[:7] + [None]
@@ -410,8 +426,8 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
                         prompt=image_prompt,
                         seed=MASTER_SEED,
                         randomize_seed=False,
-                        width=1792,
-                        height=1024,
+                        width=1024,
+                        height=1792,
                         guidance_scale=3.5,
                         num_inference_steps=steps,
                         api_name="/infer"
@@ -421,8 +437,8 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
                         prompt=image_prompt,
                         seed=MASTER_SEED,
                         randomize_seed=False,
-                        width=1792,
-                        height=1024,
+                        width=1024,
+                        height=1792,
                         num_inference_steps=steps,
                         api_name="/infer"
                     )
@@ -430,7 +446,7 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
                 if isinstance(img_path, dict) and "path" in img_path:
                     img_path = img_path["path"]
                 if isinstance(img_path, str) and os.path.exists(img_path):
-                    save_clean_widescreen_image(img_path, dst_jpg)
+                    save_clean_vertical_image(img_path, dst_jpg)
                     return
             except Exception as e:
                 if is_quota_error(e):
@@ -438,7 +454,7 @@ def obtain_scene_image(index, image_prompt, dst_jpg, uploaded_map):
                     continue
                 break
 
-    raise RuntimeError(f"Failed to obtain image for Scene {scene_num}")
+    raise RuntimeError(f"تعذر تجهيز صورة للمشهد {scene_num}")
 
 
 def extract_video_path(result):
@@ -459,19 +475,19 @@ def extract_video_path(result):
     return None
 
 
-def animate_scene_smoothly(index, scene, start_img, out_raw_video):
-    full_motion = f"{scene['motion_prompt']}, smooth continuous 3D cinematic documentary animation, high quality, no talking, keep structure intact"
-    neg_prompt = "talking face, open mouth, morphing, deforming, melting, warping, blurry, low quality, worst quality, text, watermark, nsfw"
+def animate_drama_scene_smoothly(index, scene, start_img, out_raw_video):
+    full_motion = f"{scene['motion_prompt']}, photorealistic live-action Chinese TV drama cinematography, natural subtle eye blinks and breathing, no distorted mouth, high quality"
+    neg_prompt = "distorted face, creepy mouth, cartoon, anime, morphing, deforming, blurry, low quality, text, watermark, nsfw"
     all_pool = [None] + HF_TOKENS
 
     for pool_idx, tok in enumerate(all_pool):
         tok_key = "SERVER_IP" if tok is None else f"TOK_{tok[:12]}"
         if tok_key in EXHAUSTED_ZEROGPU_TOKENS:
             continue
-        label = "Free Server IP" if tok is None else f"HF Token #{pool_idx} ({tok[:10]}...)"
+        label = "IP السيرفر المجاني" if tok is None else f"مفتاح HF #{pool_idx} ({tok[:10]}...)"
         try:
             wan_space = "zerogpu-aoti/wan2-2-fp8da-aoti-faster"
-            print(f"🎬 Animating Scene {index + 1}/15 (3D Documentary) via ({wan_space} - {label})...", flush=True)
+            print(f"🎬 جاري تحريك المشهد الدرامي {index + 1}/15 عبر ({wan_space} - {label})...", flush=True)
             client = Client(wan_space, token=tok, verbose=False)
             res = client.predict(
                 input_image=handle_file(start_img),
@@ -488,7 +504,7 @@ def animate_scene_smoothly(index, scene, start_img, out_raw_video):
             v_path = extract_video_path(res)
             if v_path:
                 shutil.copyfile(v_path, out_raw_video)
-                print(f"🎉 Scene {index + 1} animated via {wan_space} ({label})!", flush=True)
+                print(f"🎉 تم تحريك المشهد {index + 1} بنجاح عبر {wan_space} ({label})!", flush=True)
                 return True
         except Exception as e:
             if is_quota_error(e):
@@ -499,7 +515,7 @@ def animate_scene_smoothly(index, scene, start_img, out_raw_video):
                 up_img = ps.upload(start_img)
                 out = ps.call("/generate_video", [up_img, full_motion, 5, neg_prompt, 3.2, 1.1, 1.1, MASTER_SEED + index, False])
                 ps.download_video(out, out_raw_video)
-                print(f"🎉 Scene {index + 1} animated via {wan_space} Pinned ({label})!", flush=True)
+                print(f"🎉 تم تحريك المشهد {index + 1} بنجاح عبر {wan_space} Pinned ({label})!", flush=True)
                 return True
             except Exception as e2:
                 if is_quota_error(e2):
@@ -509,190 +525,244 @@ def animate_scene_smoothly(index, scene, start_img, out_raw_video):
     return False
 
 
-def vtt_time_to_seconds(t_str):
-    t_str = t_str.strip().replace(",", ".")
-    parts = t_str.split(":")
-    if len(parts) == 3:
-        return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
-    elif len(parts) == 2:
-        return float(parts[0]) * 60 + float(parts[1])
-    return 0.0
+def synthesize_character_line(scene_idx, line_idx, line_info, dst_wav):
+    """
+    توليد جملة تمثيلية بصوت الشخصية المحددة + ضبط طبقة الصوت (Pitch) والمؤثر الدرامي
+    بدون أي قص للكلمات (100% Uncut Dialogue)!
+    """
+    speaker = line_info["speaker"]
+    text = line_info["text"]
+    sfx_key = line_info.get("sfx")
+    cfg = CHARACTER_CAST.get(speaker, CHARACTER_CAST["chef"])
 
-
-def parse_vtt_into_5word_phrases(vtt_path, fallback_text, total_dur, delay_sec=0.15):
-    phrases = []
-    if os.path.exists(vtt_path):
-        try:
-            content = Path(vtt_path).read_text(encoding="utf-8", errors="ignore")
-            blocks = re.split(r"\n\s*\n", content)
-            for b in blocks:
-                lines = [ln.strip() for ln in b.splitlines() if ln.strip()]
-                time_line = next((ln for ln in lines if "-->" in ln), None)
-                if not time_line:
-                    continue
-                t_parts = time_line.split("-->")
-                st = vtt_time_to_seconds(t_parts[0]) + delay_sec
-                et = vtt_time_to_seconds(t_parts[1].split()[0]) + delay_sec
-                text_lines = [ln for ln in lines if "-->" not in ln and not ln.startswith("WEBVTT") and not ln.isdigit()]
-                cue_text = " ".join(text_lines)
-                clean_words = re.sub(r'["\'«»*():;,.?!—-]', '', cue_text).split()
-                if not clean_words or et <= st:
-                    continue
-
-                chunks = [" ".join(clean_words[i:i + 5]) for i in range(0, len(clean_words), 5)]
-                c_step = (et - st) / len(chunks)
-                for c_i, ch in enumerate(chunks):
-                    c_start = round(st + c_i * c_step, 2)
-                    c_end = round(st + (c_i + 1) * c_step, 2)
-                    phrases.append((ch, c_start, min(c_end, total_dur)))
-        except Exception:
-            pass
-
-    if phrases:
-        return phrases
-
-    clean_words = re.sub(r'["\'«»*():;,.?!—-]', '', fallback_text).split()
-    chunks = [" ".join(clean_words[i:i + 5]) for i in range(0, len(clean_words), 5)] or ["..."]
-    step = total_dur / len(chunks)
-    return [(ch, round(idx * step, 2), round((idx + 1) * step, 2)) for idx, ch in enumerate(chunks)]
-
-
-def build_uncut_crystal_clear_audio(seg_idx, scene, out_wav):
-    text = scene["narration"]
-    sfx_key = scene["sfx"]
-
-    raw_mp3 = f"seg_raw_{seg_idx}.mp3"
-    raw_vtt = f"seg_sub_{seg_idx}.vtt"
-    clean_voice_wav = f"seg_clean_{seg_idx}.wav"
-    sfx_ogg = f"seg_sfx_{seg_idx}.ogg"
+    raw_mp3 = f"line_raw_{scene_idx}_{line_idx}.mp3"
+    pitched_wav = f"line_pitch_{scene_idx}_{line_idx}.wav"
 
     voice_ok = False
-    for v_name in [ENGLISH_VOICE, "en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural", "en-US-ChristopherNeural"]:
+    for v_name in cfg["voices"]:
         try:
             subprocess.run([
-                "edge-tts", "--voice", v_name, "--rate=-2%",
-                "--text", text,
-                "--write-media", raw_mp3,
-                "--write-subtitles", raw_vtt
-            ], check=True, timeout=45, stderr=subprocess.DEVNULL)
-            if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
+                "edge-tts", "--voice", v_name, f"--rate={cfg['rate']}",
+                "--text", text, "--write-media", raw_mp3
+            ], check=True, timeout=30, stderr=subprocess.DEVNULL)
+            if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 800:
                 voice_ok = True
                 break
         except Exception:
-            time.sleep(0.5)
+            time.sleep(0.4)
 
     if not voice_ok:
-        encoded = urllib.parse.quote(text[:450])
-        r = requests.get(f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q={encoded}", timeout=25)
+        encoded = urllib.parse.quote(text)
+        r = requests.get(f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=ar&q={encoded}", timeout=25)
         with open(raw_mp3, "wb") as f:
             f.write(r.content)
 
-    studio_audio_chain = (
-        "highpass=f=70,"
-        "equalizer=f=165:width_type=o:width=1.5:g=2.4,"
-        "equalizer=f=3500:width_type=o:width=2.0:g=1.8,"
-        "acompressor=threshold=-18dB:ratio=2.2:attack=15:release=180:makeup=1.5"
+    # ضبط طبقة صوت الشخصية (طفلة / جد / ملياردير) + EQ دافئ نقي بدون silenceremove!
+    pf = cfg["pitch_factor"]
+    if abs(pf - 1.0) > 0.01:
+        inv_tempo = round(1.0 / pf, 4)
+        pitch_chain = f"asetrate=44100*{pf},aresample=44100,atempo={inv_tempo}"
+    else:
+        pitch_chain = "aresample=44100"
+
+    audio_fx = (
+        f"{pitch_chain},"
+        "highpass=f=75,"
+        "equalizer=f=220:width_type=o:width=1.5:g=2.0,"
+        "equalizer=f=3400:width_type=o:width=2.0:g=1.6,"
+        f"volume={cfg['vol']}"
     )
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
-        "-i", raw_mp3,
-        "-af", studio_audio_chain,
-        "-ar", "44100", "-ac", "2", clean_voice_wav
+        "-i", raw_mp3, "-af", audio_fx,
+        "-ar", "44100", "-ac", "2", pitched_wav
     ], check=True)
 
     probe = subprocess.run([
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1", clean_voice_wav
+        "-of", "default=noprint_wrappers=1:nokey=1", pitched_wav
     ], capture_output=True, text=True, check=True)
-    v_dur = float(probe.stdout.strip() or "18.0")
+    v_dur = float(probe.stdout.strip() or "3.5")
+    # إضافة 0.50 ثانية وقفة درامية طبيعية بعد كل جملة حوارية
+    line_dur = round(v_dur + 0.50, 2)
 
-    final_dur = round(v_dur + 0.80, 2)
-    timed_phrases = parse_vtt_into_5word_phrases(raw_vtt, text, final_dur, delay_sec=0.15)
-
-    sfx_url, sfx_vol = SFX_LIBRARY.get(sfx_key, SFX_LIBRARY["whoosh"])
-    try:
-        r = requests.get(sfx_url, timeout=15)
-        if r.ok and len(r.content) > 1000:
-            with open(sfx_ogg, "wb") as f:
-                f.write(r.content)
-            subprocess.run([
-                "ffmpeg", "-y", "-loglevel", "error",
-                "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={final_dur}",
-                "-i", sfx_ogg,
-                "-i", clean_voice_wav,
-                "-filter_complex",
-                f"[1:a]atrim=0:{min(final_dur, 3.0)},afade=t=in:d=0.1,afade=t=out:st={max(min(final_dur, 3.0) - 0.6, 0.2)}:d=0.6,volume={sfx_vol}[s];"
-                f"[2:a]adelay=150|150,apad=pad_dur=0.65,volume=1.40[v];"
-                f"[0:a][s][v]amix=inputs=3:duration=first:dropout_transition=0[a]",
-                "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
-            ], check=True)
-            return final_dur, timed_phrases
-    except Exception:
-        pass
+    if sfx_key and sfx_key in DRAMA_SFX:
+        sfx_url, sfx_vol = DRAMA_SFX[sfx_key]
+        sfx_ogg = f"line_sfx_{scene_idx}_{line_idx}.ogg"
+        try:
+            r = requests.get(sfx_url, timeout=15)
+            if r.ok and len(r.content) > 800:
+                with open(sfx_ogg, "wb") as f:
+                    f.write(r.content)
+                subprocess.run([
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={line_dur}",
+                    "-i", sfx_ogg,
+                    "-i", pitched_wav,
+                    "-filter_complex",
+                    f"[1:a]atrim=0:{min(line_dur, 1.8)},afade=t=in:d=0.05,afade=t=out:st={max(min(line_dur, 1.8) - 0.4, 0.1)}:d=0.4,volume={sfx_vol}[s];"
+                    f"[2:a]adelay=120|120,apad=pad_dur=0.4[v];"
+                    f"[0:a][s][v]amix=inputs=3:duration=first:dropout_transition=0[a]",
+                    "-map", "[a]", "-t", str(line_dur), "-ar", "44100", "-ac", "2", dst_wav
+                ], check=True)
+                return line_dur
+        except Exception:
+            pass
 
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={final_dur}",
-        "-i", clean_voice_wav,
+        "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={line_dur}",
+        "-i", pitched_wav,
         "-filter_complex",
-        "[1:a]adelay=150|150,apad=pad_dur=0.65,volume=1.40[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
-        "-map", "[a]", "-t", str(final_dur), "-ar", "44100", "-ac", "2", out_wav
+        "[1:a]adelay=120|120,apad=pad_dur=0.4[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0[a]",
+        "-map", "[a]", "-t", str(line_dur), "-ar", "44100", "-ac", "2", dst_wav
     ], check=True)
-    return final_dur, timed_phrases
+    return line_dur
 
 
-def render_widescreen_subtitle_png(phrase_text, png_path):
-    font_file = ensure_english_font()
+def build_scene_multi_voice_audio(scene_idx, scene, out_scene_wav):
+    """
+    يدمج جميع الجمل الحوارية داخل المشهد بأصوات الشخصيات المختلفة
+    ويرجع المدة الإجمالية الدقيقة + جدول توقيت الترجمة العربية بالمللي ثانية!
+    """
+    line_wavs = []
+    timed_subs = []
+    cursor_t = 0.0
+
+    for l_idx, line_info in enumerate(scene["dialogue"]):
+        l_wav = f"scene_{scene_idx}_line_{l_idx}.wav"
+        l_dur = synthesize_character_line(scene_idx, l_idx, line_info, l_wav)
+        line_wavs.append(l_wav)
+
+        # تقسيم الجملة الطويلة إلى سطرين متتابعين لسهولة القراءة مثل المسلسل الصيني بالضبط
+        clean_text = re.sub(r'[\u0617-\u061A\u064B-\u0652]', '', line_info["text"]).strip()
+        words = clean_text.split()
+        if len(words) > 9:
+            mid = len(words) // 2
+            part1 = " ".join(words[:mid])
+            part2 = " ".join(words[mid:])
+            half_t = round(cursor_t + (l_dur - 0.35) * 0.5, 2)
+            timed_subs.append((part1, round(cursor_t + 0.08, 2), half_t))
+            timed_subs.append((part2, half_t, round(cursor_t + l_dur - 0.15, 2)))
+        else:
+            timed_subs.append((clean_text, round(cursor_t + 0.08, 2), round(cursor_t + l_dur - 0.15, 2)))
+
+        cursor_t += l_dur
+
+    list_file = f"scene_audio_list_{scene_idx}.txt"
+    with open(list_file, "w") as f:
+        for w in line_wavs:
+            f.write(f"file '{w}'\n")
+
+    subprocess.run([
+        "ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
+        "-i", list_file, "-ar", "44100", "-ac", "2", out_scene_wav
+    ], check=True)
+
+    return round(cursor_t, 2), timed_subs
+
+
+def render_orange_episode_badge_png(png_path):
+    """
+    رسم الشارة البرتقالية الأيقونية في أعلى اليسار (دموع الملاك الصغير / الحلقة 1)
+    بنفس تصميم الفيديوهات المرجعية تماماً!
+    """
+    font_file = ensure_arabic_font()
     img = Image.new("RGBA", (VIDEO_W, VIDEO_H), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    font = ImageFont.truetype(font_file, 46)
 
-    words = phrase_text.upper().split()
-    full_text = " ".join(words)
-    bbox = draw.textbbox((0, 0), full_text, font=font)
-    w = bbox[2] - bbox[0]
-    h = bbox[3] - bbox[1]
-    x_pos = (VIDEO_W - w) // 2
-    y_pos = 920
+    try:
+        font = ImageFont.truetype(font_file, 54, layout_engine=ImageFont.Layout.BASIC)
+    except Exception:
+        font = ImageFont.truetype(font_file, 54)
 
-    pad_x, pad_y = 34, 16
+    line1 = reshape_ar(EPISODE_TITLE_LINE1)
+    line2 = reshape_ar(EPISODE_TITLE_LINE2)
+
+    b1 = draw.textbbox((0, 0), line1, font=font)
+    w1, h1 = b1[2] - b1[0], b1[3] - b1[1]
+    b2 = draw.textbbox((0, 0), line2, font=font)
+    w2, h2 = b2[2] - b2[0], b2[3] - b2[1]
+
+    orange_bg = (242, 138, 42, 245)
+    pad_x, pad_y = 28, 14
+
+    # الصندوق العلوي (اسم المسلسل)
+    x1_box, y1_box = 42, 115
     draw.rounded_rectangle(
-        [(x_pos - pad_x, y_pos - pad_y), (x_pos + w + pad_x, y_pos + h + pad_y + 10)],
-        radius=22,
-        fill=(10, 14, 22, 215),
-        outline=(255, 200, 45, 235),
-        width=3
+        [(x1_box, y1_box), (x1_box + w1 + pad_x * 2, y1_box + h1 + pad_y * 2)],
+        radius=22, fill=orange_bg
     )
+    draw.text((x1_box + pad_x, y1_box + pad_y - 4), line1, font=font, fill=(255, 255, 255, 255))
 
-    curr_x = x_pos
-    for idx, word in enumerate(words):
-        word_str = word + (" " if idx < len(words) - 1 else "")
-        w_box = draw.textbbox((0, 0), word_str, font=font)
-        word_w = w_box[2] - w_box[0]
-        color = (255, 215, 45, 255) if idx == len(words) - 1 else (255, 255, 255, 255)
-
-        for dx in (-3, 0, 3):
-            for dy in (-3, 0, 3):
-                if dx != 0 or dy != 0:
-                    draw.text((curr_x + dx, y_pos + dy), word_str, font=font, fill=(0, 0, 0, 255))
-        draw.text((curr_x, y_pos), word_str, font=font, fill=color)
-        curr_x += word_w
+    # الصندوق السفلي المتصل به (رقم الحلقة)
+    x2_box = x1_box + (w1 - w2) // 2
+    y2_box = y1_box + h1 + pad_y * 2 - 4
+    draw.rounded_rectangle(
+        [(x2_box, y2_box), (x2_box + w2 + pad_x * 2, y2_box + h2 + pad_y * 2)],
+        radius=22, fill=orange_bg
+    )
+    draw.text((x2_box + pad_x, y2_box + pad_y - 4), line2, font=font, fill=(255, 255, 255, 255))
 
     img.save(png_path, "PNG")
 
 
-def build_scene_clip(index, scene, all_scene_imgs):
-    audio_file = f"scene_audio_{index}.wav"
-    duration, timed_phrases = build_uncut_crystal_clear_audio(index, scene, audio_file)
+def render_arabic_drama_subtitle_png(text_ar, png_path):
+    """
+    ترجمة المسلسلات الصينية المدبلجة: خط أبيض عريض مع حواف سوداء حادة وواضحة
+    في أسفل المنتصف بدون تغطية وجوه الشخصيات!
+    """
+    font_file = ensure_arabic_font()
+    img = Image.new("RGBA", (VIDEO_W, VIDEO_H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
 
-    start_img = all_scene_imgs[index]
+    try:
+        font = ImageFont.truetype(font_file, 52, layout_engine=ImageFont.Layout.BASIC)
+    except Exception:
+        font = ImageFont.truetype(font_file, 52)
+
+    # تقسيم منطقي إلى سطرين قبل إعادة تشكيل الحروف العربية (لضمان الترتيب الصحيح من اليمين لليسار)
+    words = text_ar.split()
+    lines = []
+    cur = []
+    for w in words:
+        if len(" ".join(cur + [w])) <= 26 or not cur:
+            cur.append(w)
+        else:
+            lines.append(" ".join(cur))
+            cur = [w]
+    if cur:
+        lines.append(" ".join(cur))
+
+    y_base = 1430 if len(lines) == 1 else 1390
+    for l_idx, ln in enumerate(lines[:2]):
+        disp = reshape_ar(ln)
+        bbox = draw.textbbox((0, 0), disp, font=font)
+        tw = bbox[2] - bbox[0]
+        x_pos = (VIDEO_W - tw) // 2
+        y_pos = y_base + l_idx * 74
+
+        # حواف سوداء سينمائية بارزة (Stroke) مثل المسلسل المرجعي تماماً
+        for dx in (-4, -2, 0, 2, 4):
+            for dy in (-4, -2, 0, 2, 4):
+                if dx != 0 or dy != 0:
+                    draw.text((x_pos + dx, y_pos + dy), disp, font=font, fill=(0, 0, 0, 255))
+        draw.text((x_pos, y_pos), disp, font=font, fill=(255, 255, 255, 255))
+
+    img.save(png_path, "PNG")
+
+
+def build_drama_scene_clip(index, scene, img_file, badge_png):
+    audio_wav = f"scene_audio_{index}.wav"
+    duration, timed_subs = build_scene_multi_voice_audio(index, scene, audio_wav)
+
     raw_ai_video = f"raw_ai_{index}.mp4"
     base_video = f"base_{index}.mp4"
     video_file = f"scene_{index}.mp4"
     fps = 30
     total_frames = int(round(duration * fps))
 
-    ai_animated = animate_scene_smoothly(index, scene, start_img, raw_ai_video)
+    ai_animated = animate_drama_scene_smoothly(index, scene, img_file, raw_ai_video)
 
     if ai_animated and os.path.exists(raw_ai_video):
         v_probe = subprocess.run([
@@ -700,7 +770,7 @@ def build_scene_clip(index, scene, all_scene_imgs):
             "-of", "default=noprint_wrappers=1:nokey=1", raw_ai_video
         ], capture_output=True, text=True, check=True)
         raw_vid_dur = max(float(v_probe.stdout.strip() or "3.0"), 1.0)
-        stretch_factor = round((duration + 0.25) / raw_vid_dur, 3)
+        stretch_factor = round((duration + 0.20) / raw_vid_dur, 3)
 
         subprocess.run([
             "ffmpeg", "-y", "-loglevel", "error",
@@ -709,9 +779,9 @@ def build_scene_clip(index, scene, all_scene_imgs):
                 f"setpts={stretch_factor}*PTS,"
                 f"minterpolate=fps={fps}:mi_mode=blend,"
                 f"tpad=stop_mode=clone:stop_duration=3,"
-                f"scale=2112:1188:force_original_aspect_ratio=increase,crop=2112:1188,"
-                f"crop={VIDEO_W}:{VIDEO_H}:'(iw-{VIDEO_W})/2 - 35*(t/{duration})':'(ih-{VIDEO_H})/2 - 20*(t/{duration})',"
-                f"cas=0.65,setsar=1,format=yuv420p"
+                f"scale=1188:2112:force_original_aspect_ratio=increase,crop=1188:2112,"
+                f"crop={VIDEO_W}:{VIDEO_H}:'(iw-{VIDEO_W})/2':'(ih-{VIDEO_H})/2 - 30*(t/{duration})',"
+                f"cas=0.6,setsar=1,format=yuv420p"
             ),
             "-t", str(duration), "-r", str(fps),
             "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
@@ -719,33 +789,35 @@ def build_scene_clip(index, scene, all_scene_imgs):
     else:
         subprocess.run([
             "ffmpeg", "-y", "-loglevel", "error",
-            "-loop", "1", "-i", start_img,
+            "-loop", "1", "-i", img_file,
             "-vf", (
-                f"scale=2304:1296:force_original_aspect_ratio=increase,crop=2304:1296,"
-                f"zoompan=z='min(zoom+0.0005,1.18)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                f"d={total_frames + 15}:s={VIDEO_W}x{VIDEO_H}:fps={fps},cas=0.6,setsar=1,format=yuv420p"
+                f"scale=1296:2304:force_original_aspect_ratio=increase,crop=1296:2304,"
+                f"zoompan=z='min(zoom+0.0008,1.15)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                f"d={total_frames + 15}:s={VIDEO_W}x{VIDEO_H}:fps={fps},cas=0.55,setsar=1,format=yuv420p"
             ),
             "-t", str(duration), "-r", str(fps),
             "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-an", base_video
         ], check=True)
 
-    inputs_cmd = ["-i", base_video, "-i", audio_file]
-    filter_parts = []
-    last_stream = "[0:v]"
-    for p_idx, (phrase, start_t, end_t) in enumerate(timed_phrases):
+    # تركيب الشارة البرتقالية + ترجمات الحوار المتزامنة بالمللي ثانية
+    inputs_cmd = ["-i", base_video, "-i", audio_wav, "-loop", "1", "-t", str(duration), "-i", badge_png]
+    filter_parts = ["[0:v][2:v]overlay=0:0:shortest=1[vbadge]"]
+    last_stream = "[vbadge]"
+
+    for p_idx, (sub_text, start_t, end_t) in enumerate(timed_subs):
         png_file = f"sub_{index}_{p_idx}.png"
-        render_widescreen_subtitle_png(phrase, png_file)
+        render_arabic_drama_subtitle_png(sub_text, png_file)
         inputs_cmd.extend(["-loop", "1", "-t", str(duration), "-i", png_file])
+        inp_idx = p_idx + 3
         next_stream = f"[v{p_idx}]"
-        inp_idx = p_idx + 2
         filter_parts.append(
             f"{last_stream}[{inp_idx}:v]overlay=0:0:shortest=1:enable='between(t,{start_t},{end_t})'{next_stream}"
         )
         last_stream = next_stream
 
-    fade_out_st = max(round(duration - 0.25, 2), 0.5)
+    fade_out_st = max(round(duration - 0.22, 2), 0.5)
     filter_parts.append(
-        f"{last_stream}fade=t=in:st=0:d=0.22,fade=t=out:st={fade_out_st}:d=0.25,format=yuv420p[vout]"
+        f"{last_stream}fade=t=in:st=0:d=0.18,fade=t=out:st={fade_out_st}:d=0.22,format=yuv420p[vout]"
     )
 
     subprocess.run([
@@ -762,78 +834,80 @@ def build_scene_clip(index, scene, all_scene_imgs):
     return video_file, duration
 
 
-def upload_long_video_to_youtube(video_path, title, refresh_token):
-    creds = Credentials(
-        None,
-        refresh_token=refresh_token,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=YT_CLIENT_ID,
-        client_secret=YT_CLIENT_SECRET
-    )
-    youtube = build("youtube", "v3", credentials=creds)
+def upload_to_facebook_reels(video_path, caption, page_id):
+    file_size = os.path.getsize(video_path)
+    init_res = requests.post(
+        f"{GRAPH_API}/{page_id}/video_reels",
+        data={"upload_phase": "start", "access_token": META_ACCESS_TOKEN},
+        timeout=30
+    ).json()
 
-    clean_title = title[:95]
+    video_id = init_res["video_id"]
+    upload_url = init_res["upload_url"]
 
-    body = {
-        "snippet": {
-            "title": clean_title,
-            "description": (
-                f"{title}\n\n"
-                "Part 2 of Lost Ancient Engineering Secrets: The unbelievable story of the 2,000-year-old Antikythera Mechanism—the world's oldest analog computer found at the bottom of the Aegean Sea.\n"
-                "#history #engineering #antikythera #ancientgreece #documentary #science"
-            ),
-            "tags": ["antikythera mechanism", "ancient computer", "ancient engineering", "history documentary", "ancient greece", "lost technology"],
-            "categoryId": "27"
-        },
-        "status": {
-            "privacyStatus": "public",
-            "selfDeclaredMadeForKids": False
-        }
+    with open(video_path, "rb") as f:
+        video_bytes = f.read()
+
+    headers = {
+        "Authorization": f"OAuth {META_ACCESS_TOKEN}",
+        "offset": "0",
+        "file_size": str(file_size),
+        "Content-Type": "application/octet-stream"
     }
-    media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
-    res = youtube.videos().insert(part="snippet,status", body=body, media_body=media).execute()
-    print(f"[YouTube Long-Form] Uploaded successfully: https://youtu.be/{res['id']}", flush=True)
+    requests.post(upload_url, headers=headers, data=video_bytes, timeout=240).raise_for_status()
+
+    finish_res = requests.post(
+        f"{GRAPH_API}/{page_id}/video_reels",
+        data={
+            "upload_phase": "finish",
+            "video_id": video_id,
+            "video_state": "PUBLISHED",
+            "description": caption,
+            "access_token": META_ACCESS_TOKEN
+        },
+        timeout=60
+    ).json()
+    print(f"[Facebook Reels] تم النشر بنجاح: {finish_res}", flush=True)
 
 
 def assemble_and_publish():
-    title = "The 2,000-Year-Old Ancient Computer Found at the Bottom of the Sea (Part 2)"
     uploaded_img_map = discover_uploaded_images_map()
-    print(f"📸 Uploaded Gemini images found in 'images/': {len(uploaded_img_map)} ({sorted(uploaded_img_map.keys())})", flush=True)
+    print(f"📸 الصور الواقعية المكتشفة في فولدر 'images/': {len(uploaded_img_map)} ({sorted(uploaded_img_map.keys())})", flush=True)
 
-    all_scene_imgs = []
-    for idx, scene in enumerate(ANTIKYTHERA_SCENES):
-        img_file = f"scene_img_{idx}.jpg"
-        obtain_scene_image(idx, scene["image_prompt"], img_file, uploaded_img_map)
-        all_scene_imgs.append(img_file)
+    badge_png = "badge_ep1.png"
+    render_orange_episode_badge_png(badge_png)
 
     scene_videos = []
     total_dur = 0.0
-    for idx, scene in enumerate(ANTIKYTHERA_SCENES):
-        print(f"--- Producing Uncut Scene {idx + 1}/15 ---", flush=True)
-        clip, dur = build_scene_clip(idx, scene, all_scene_imgs)
+    for idx, scene in enumerate(EPISODE_1_SCENES):
+        img_file = f"scene_img_{idx}.jpg"
+        obtain_scene_image(idx, scene["image_prompt"], img_file, uploaded_img_map)
+        print(f"--- جاري إنتاج المشهد الدرامي {idx + 1}/15 (أصوات متعددة + ترجمة) ---", flush=True)
+        clip, dur = build_drama_scene_clip(idx, scene, img_file, badge_png)
         scene_videos.append(clip)
         total_dur += dur
 
-    print(f"⏱️ Total Uncut Documentary Duration: {round(total_dur, 1)}s ({round(total_dur / 60, 2)} minutes)!", flush=True)
+    print(f"⏱️ إجمالي مدة الحلقة 1 النهائية: {round(total_dur, 1)} ثانية ({round(total_dur / 60, 2)} دقيقة)!", flush=True)
 
     with open("inputs.txt", "w") as f:
         for v in scene_videos:
             f.write(f"file '{v}'\n")
 
-    merged_video = "merged_long.mp4"
-    final_video = "final_antikythera_part2.mp4"
+    merged_video = "merged_drama_ep1.mp4"
+    final_video = "final_drama_ep1.mp4"
 
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
         "-i", "inputs.txt", "-c", "copy", merged_video
     ], check=True)
 
+    # إضافة همس موسيقي درامي دافئ وهادئ جداً في الخلفية لربط الحوارات بسلاسة سينمائية
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
         "-i", merged_video,
         "-f", "lavfi", "-i", "anoisesrc=c=pink:a=0.004",
         "-filter_complex",
-        "[1:a]lowpass=f=240[bg];[0:a]volume=1.15[fg];[fg][bg]amix=inputs=2:duration=first:dropout_transition=1[a]",
+        "[1:a]lowpass=f=220[bg];[0:a]volume=1.15[fg];[fg][bg]amix=inputs=2:duration=first:dropout_transition=1[a]",
         "-map", "0:v", "-map", "[a]",
         "-vf", f"scale={VIDEO_W}:{VIDEO_H},setsar=1,format=yuv420p",
         "-r", "30", "-c:v", "libx264", "-preset", "fast", "-profile:v", "high",
@@ -841,12 +915,22 @@ def assemble_and_publish():
         "-ac", "2", "-b:a", "192k", "-movflags", "+faststart", final_video
     ], check=True)
 
-    print("🚀 Publishing Part 2 Long-Form Documentary to YouTube...", flush=True)
-    for token in YT_REFRESH_TOKENS:
-        try:
-            upload_long_video_to_youtube(final_video, title, token)
-        except Exception as e:
-            print(f"[YouTube Error] {e}", flush=True)
+    fb_caption = (
+        "دموع الملاك الصغير - الحلقة 1 💔✨\n"
+        "دخلت الطفلة المطعم بعملة واحدة فقط لتطعم أمها المريضة... فشاهد كيف صُدم الملياردير حين رأى القلادة في عنقها! 😱\n"
+        "اكتبوا في التعليقات: هل تتوقعون أن «مي مي» هي ابنة الملياردير الحقيقية؟ 👇\n"
+        "اضغط متابعة (Follow) عشان تشوف الحلقة 2 غداً! 🔥\n\n"
+        "#دراما_صينية #مسلسلات_صينية #قصص_مؤثرة #دموع_الملاك_الصغير #ريلز"
+    )
+
+    if META_ACCESS_TOKEN and FB_PAGE_IDS:
+        for page_id in FB_PAGE_IDS:
+            try:
+                upload_to_facebook_reels(final_video, fb_caption, page_id)
+            except Exception as e:
+                print(f"[Facebook Error] {e}", flush=True)
+
+    print("🎉 تم تجهيز ملف (final_drama_ep1.mp4) وحفظه للتحميل المباشر من GitHub Actions Artifacts!", flush=True)
 
 
 assemble_and_publish()
